@@ -40,13 +40,13 @@ import signal
 
 from threading import Semaphore
 
-from rptk.mirp.experimentClass import ExperimentClass
-from rptk.mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass, \
+from  mirp.experimentClass import ExperimentClass
+from  mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass, \
     ImageInterpolationSettingsClass, RoiInterpolationSettingsClass, ResegmentationSettingsClass, \
     ImagePerturbationSettingsClass, ImageTransformationSettingsClass, FeatureExtractionSettingsClass
 
-from rptk.src.config.Log_generator_config import LogGenerator
-# from rptk.src.Preprocessing.DataHandler import *
+from  src.config.Log_generator_config import LogGenerator
+# from  src.Preprocessing.DataHandler import *
 
 class TimeoutException(Exception):
     """Custom exception for timeouts."""

@@ -1,82 +1,65 @@
-import pandas as pd
-import pickle5 as pickle
-from tqdm import tqdm
-from typing import Callable, Union
-import matplotlib.pyplot as plt
-from pathlib import Path
-import re
-from pathlib import Path
-import json
-import seaborn as sns
-import os
-import optuna
-from optuna.trial import Trial
-import time
-import shap
-import statistics
-import numpy as np
-import random
-import torch
 import glob
+import json
+import os
+import pickle
+import random
+import statistics
+import time
 # from loaders import BarLoader, SpinningLoader, TextLoader
 from collections import Counter
+from pathlib import Path
+from typing import Callable
+# import warnings filter
+from warnings import simplefilter
 
-# RPTK import
-from rptk.src.config.Log_generator_config import LogGenerator
-from rptk.src.model_training.PerformancePlotter import PerformancePlotter
-from rptk.src.model_training.HyperparameterConfigurator import HyperparameterConfigurator
-from rptk.src.model_training.Optimizer import Optimizer
-
-# Mlxtend
-from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
-from mlxtend.plotting import plot_decision_regions as plot_dcr
-from mlxtend.feature_selection import SequentialFeatureSelector as SFS
-from mlxtend.classifier import EnsembleVoteClassifier
-
+import matplotlib.pyplot as plt
 # Neptune & Wnadb
 import neptune
 import neptune.integrations.optuna as optuna_utils
+import numpy as np
+import optuna
+import pandas as pd
+import torch
 import wandb
+from imblearn.over_sampling import SMOTE, BorderlineSMOTE, RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler, RepeatedEditedNearestNeighbours
+from lightgbm import LGBMClassifier, LGBMRegressor
+# Mlxtend
+from mlxtend.classifier import EnsembleVoteClassifier
+from optuna.trial import Trial
+# from tabnet import TabNet, TabNetClassifier
+from pytorch_tabnet.tab_model import TabNetRegressor, TabNetClassifier
+from sklearn.base import clone
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, \
+    GradientBoostingRegressor
+from sklearn.inspection import permutation_importance
+from sklearn.metrics import roc_curve, make_scorer, balanced_accuracy_score, roc_auc_score, average_precision_score, \
+    f1_score, confusion_matrix, auc
+# Sklearn
+from sklearn.model_selection import train_test_split, validation_curve, ShuffleSplit, cross_val_score, GridSearchCV, \
+    cross_val_predict, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.utils import resample
+from tqdm import tqdm
+from xgboost import XGBClassifier, XGBRegressor
+
+# RPTK import
+from src.config.Log_generator_config import LogGenerator
+from src.model_training.HyperparameterConfigurator import HyperparameterConfigurator
+from src.model_training.PerformancePlotter import PerformancePlotter
+
 
 # GPU support
 # from cuml.ensemble import RandomForestRegressor as RandomForestRegressor_GPU
 # from cuml.ensemble import RandomForestClassifier as RandomForestClassifier_GPU
 
-# Sklearn
-import sklearn
-from sklearn.model_selection import train_test_split, validation_curve, ShuffleSplit, cross_val_score, GridSearchCV, \
-    cross_val_predict, KFold, StratifiedKFold
-from sklearn.metrics import roc_curve, make_scorer, accuracy_score, balanced_accuracy_score, mean_squared_error, \
-    roc_auc_score, average_precision_score, f1_score, confusion_matrix, auc
-from sklearn.utils import resample
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.feature_selection import SequentialFeatureSelector
-from sklearn.feature_selection import SelectFromModel
-from sklearn.feature_selection import SelectKBest, f_classif, chi2, SelectFdr, SelectFpr
-from sklearn.base import clone
-
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, \
-    GradientBoostingRegressor
-from imblearn.over_sampling import SMOTE, BorderlineSMOTE, RandomOverSampler
-from imblearn.under_sampling import RandomUnderSampler, RepeatedEditedNearestNeighbours
-# from tabnet import TabNet, TabNetClassifier
-from pytorch_tabnet.tab_model import TabNetRegressor, TabNetClassifier
-from pytorch_tabnet.pretraining import TabNetPretrainer
-from lightgbm import LGBMClassifier, LGBMRegressor
-import lightgbm as lgb
-from xgboost import XGBClassifier, XGBRegressor
-from sklearn.linear_model import Lasso
-from sklearn.svm import SVC, LinearSVC, NuSVC
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.inspection import permutation_importance
-
-# import warnings filter
-from warnings import simplefilter
 
 class TabnetWrapper:
     """
     Wrapper to convert Pandas DataFrame input to NumPy array for TabNetClassifier.
     """
+
     def __init__(self, model):
         self.model = model
 
@@ -108,11 +91,11 @@ class TabnetWrapper:
             probas = probas.reshape(-1, 1)
 
         return probas
-    
+
     def get_params(self, deep=True):
         """Pass through get_params to avoid sklearn compatibility issues."""
         return self.model.get_params(deep)
-    
+
     @property
     def classes_(self):
         """Pass through classes_ attribute for compatibility."""
@@ -123,12 +106,15 @@ class _ListFoldSplitter:
     """
     A simple sklearn-like CV splitter that yields pre-defined (train_idx, val_idx) pairs.
     """
+
     def __init__(self, fold_indices):
         # fold_indices: list of tuples (train_idx_array, val_idx_array) referencing rows of X passed to split()
         self.fold_indices = fold_indices
+
     def split(self, X=None, y=None, groups=None):
         for tr, va in self.fold_indices:
             yield tr, va
+
     def get_n_splits(self, X=None, y=None, groups=None):
         return len(self.fold_indices)
 
@@ -149,6 +135,7 @@ class ModelTrainer:
     """
     Class to train the models.
     """
+
     def _load_autoradiomics_splits(self, path):
         """
         Load AutoRadiomics splits.json and return:
@@ -166,7 +153,7 @@ class ModelTrainer:
             }
           }
         """
-        
+
         with open(path, "r") as f:
             cfg = json.load(f)
 
@@ -186,7 +173,7 @@ class ModelTrainer:
             folds.append((tr_ids, va_ids))
 
         # strong consistency: no overlap between test and any train/val
-        flat_trainval = set([i for tr, va in folds for i in tr+va])
+        flat_trainval = set([i for tr, va in folds for i in tr + va])
         overlap = set(test_ids) & flat_trainval
         if overlap:
             raise ValueError(f"IDs overlap between test and train/val: {sorted(list(overlap))[:5]} ...")
@@ -195,7 +182,8 @@ class ModelTrainer:
         val_counter = Counter([vid for _, va in folds for vid in va])
         multi = [vid for vid, c in val_counter.items() if c > 1]
         if multi:
-            self.logger.warning(f"Validation IDs appear in multiple folds (first occurrence will be used): {multi[:5]} ...")
+            self.logger.warning(
+                f"Validation IDs appear in multiple folds (first occurrence will be used): {multi[:5]} ...")
             self.error.warning(f"Warning: Validation IDs in multiple folds: {multi[:5]} ...")
 
         return test_ids, folds, len(folds)
@@ -219,22 +207,23 @@ class ModelTrainer:
             if miss_tr or miss_va:
                 missing_any = True
                 if miss_tr:
-                    self.logger.warning(f"Fold {fold_id}: {len(miss_tr)} train IDs from splits.json not in X_train. Example: {miss_tr[:5]}")
+                    self.logger.warning(
+                        f"Fold {fold_id}: {len(miss_tr)} train IDs from splits.json not in X_train. Example: {miss_tr[:5]}")
                 if miss_va:
-                    self.logger.warning(f"Fold {fold_id}: {len(miss_va)} val IDs from splits.json not in X_train. Example: {miss_va[:5]}")
+                    self.logger.warning(
+                        f"Fold {fold_id}: {len(miss_va)} val IDs from splits.json not in X_train. Example: {miss_va[:5]}")
 
             if len(va_idx) == 0:
                 raise ValueError(f"Fold {fold_id} has no validation samples after alignment with current X_train.")
             if len(tr_idx) == 0:
                 raise ValueError(f"Fold {fold_id} has no training samples after alignment with current X_train.")
 
-            fold_indices.append( (np.array(tr_idx, dtype=int), np.array(va_idx, dtype=int)) )
+            fold_indices.append((np.array(tr_idx, dtype=int), np.array(va_idx, dtype=int)))
 
         if missing_any:
             print("Warning: Some IDs from splits.json were not found in X_train; see logger for details.")
-        
-        return _ListFoldSplitter(fold_indices)
 
+        return _ListFoldSplitter(fold_indices)
 
     def __init__(self,
                  data: pd.DataFrame(),  # data where the model looks at
@@ -244,14 +233,15 @@ class ModelTrainer:
                  predict_only: bool = False,  # if only prediction is needed and no training
                  ensemble: bool = True,
                  ensemble_best_models: bool = False,  # if the best models should be ensembled
-                 ensemble_best_n_models: int = 3,  # how many of the best models raked should be incuded in the ensembling
+                 ensemble_best_n_models: int = 3,
+                 # how many of the best models raked should be incuded in the ensembling
                  model_save_dir: str = None,
                  plot_save_dir: str = None,
                  model_name=None,
                  model=None,  # model to be used or list of models to be used
                  model_params=None,
                  model_type=None,
-                 model_path=None,   # path to pretrained model
+                 model_path=None,  # path to pretrained model
                  use_cross_validation: bool = True,
                  rand_state: float = None,
                  train_idx: list = None,  # ID of training samples is specific samples are needed
@@ -276,7 +266,8 @@ class ModelTrainer:
                  run_neptune: bool = False,  # Use neptune for model training visualization
                  neptune_project: str = None,  # Neptune project to enter
                  neptune_api_token: str = None,  # Neptune api token for using neptune
-                 task: str = None,  # Task to perform:  "binary_classification", "multi_class_classification" or "regression" if not set id > 5 different vales = regression else multi_class_classification
+                 task: str = None,
+                 # Task to perform:  "binary_classification", "multi_class_classification" or "regression" if not set id > 5 different vales = regression else multi_class_classification
                  model_names: list = None,  # possibility to provide names of models
                  best_selected_features_folder_path: str = None,
                  # Path to folder from feature selection where pairs of best features are stored
@@ -290,7 +281,8 @@ class ModelTrainer:
                  wandb_project_name: str = None,
                  shap_analysis: bool = True,
                  neptune_run_name: str = None,
-                 imbalance_method: str = "SMOTE",  # method to handle class imbalance 'SMOTE', 'BorderlineSMOTE', 'RandomOver', 'RandomUnder', 'RepeatedEditedNearestNeighbours'
+                 imbalance_method: str = "SMOTE",
+                 # method to handle class imbalance 'SMOTE', 'BorderlineSMOTE', 'RandomOver', 'RandomUnder', 'RepeatedEditedNearestNeighbours'
                  autoradiomics_splits_path: str = None,  # get json filts file directly from outoradiomics run
                  ):
 
@@ -376,8 +368,8 @@ class ModelTrainer:
 
         if self.rand_state is None:
             self.rand_state = 1234
-        
-        if self.autorad_config: # adopt seed to autoradiomics used seed for syncronization
+
+        if self.autorad_config:  # adopt seed to autoradiomics used seed for syncronization
             self.rand_state = 123
 
         if self.use_wandb:
@@ -396,21 +388,23 @@ class ModelTrainer:
                                             random_state=random.seed(self.rand_state))
             else:
                 if self.autorad_config:
-                    self.cv = StratifiedKFold(n_splits=self.cross_val_splits, shuffle=True, random_state=self.rand_state)
+                    self.cv = StratifiedKFold(n_splits=self.cross_val_splits, shuffle=True,
+                                              random_state=self.rand_state)
                 else:
                     self.cv = ShuffleSplit(n_splits=self.cross_val_splits,
-                                        test_size=self.test_size,
-                                        random_state=random.seed(self.rand_state))
-        
+                                           test_size=self.test_size,
+                                           random_state=random.seed(self.rand_state))
+
         # control threading
         thread_limit = str(self.n_cpus)
-        for var in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS", "NUMEXPR_MAX_THREADS"]:
+        for var in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+                    "NUMEXPR_NUM_THREADS", "NUMEXPR_MAX_THREADS"]:
             os.environ[var] = thread_limit
 
         # seed everyting
         random.seed(self.rand_state)
         os.environ["PYTHONHASHSEED"] = str(self.rand_state)
-        np.random.seed(self.rand_state) 
+        np.random.seed(self.rand_state)
         torch.manual_seed(self.rand_state)
         torch.cuda.manual_seed(self.rand_state)
         torch.backends.cudnn.deterministic = True
@@ -523,7 +517,7 @@ class ModelTrainer:
                                                      shuffle=True,
                                                      test_size=self.test_size)
         return train_idx, test_idx
-    
+
     def drop_non_float_convertible_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Drop features which are not numbers
@@ -542,7 +536,7 @@ class ModelTrainer:
 
         return df[convertible_cols]
 
-    def config_input_data(self, data:pd.DataFrame):
+    def config_input_data(self, data: pd.DataFrame):
         """
         Check if input data has all necessary columns and is in correct format
         :param data: pd.DataFrame containing ID and predciton label
@@ -583,7 +577,7 @@ class ModelTrainer:
         # check for columns included lists
         # Identify columns that contain lists
         list_columns = [col for col in data.columns if data[col].apply(lambda x: isinstance(x, list)).any()]
-        
+
         if len(list_columns) > 0:
             self.logger.info("Found {} columns with lists in the data: {}".format(len(list_columns), str(list_columns)))
             print("Found {} columns with lists in the data: {}".format(len(list_columns), str(list_columns)))
@@ -594,7 +588,8 @@ class ModelTrainer:
 
         if len(data.copy()[data.copy().duplicated()]) > 0:
             print("Found {} duplicated Samples in the data!".format(str(len(data.copy()[data.copy().duplicated()]))))
-            self.error.warning("Found {} duplicated Samples in the data!".format(str(len(data.copy()[data.copy().duplicated()]))))
+            self.error.warning(
+                "Found {} duplicated Samples in the data!".format(str(len(data.copy()[data.copy().duplicated()]))))
             data = data.drop_duplicates()
 
         if self.Prediction_Label is None:
@@ -602,7 +597,7 @@ class ModelTrainer:
         elif self.Prediction_Label not in data.columns:
             self.error.error("Could not find prediction label: {}".format(self.Prediction_Label))
             print("Could not find prediction label: {}".format(self.Prediction_Label))
-        
+
         # drop non float parameters
         data = self.drop_non_float_convertible_columns(data)
 
@@ -637,16 +632,15 @@ class ModelTrainer:
 
             # Ensure we only write IDs that are present in the aligned data
             present_train = set(str(i) for i in self.X_train.index)
-            present_test  = set(str(i) for i in self.X_test.index) if hasattr(self, "X_test") else set()
+            present_test = set(str(i) for i in self.X_test.index) if hasattr(self, "X_test") else set()
 
-            
             for fold_id, (tr_ids, va_ids) in enumerate(self._autoradiomics_folds):
                 tr_ids_present = [str(i) for i in tr_ids if str(i) in present_train]
                 va_ids_present = [str(i) for i in va_ids if str(i) in present_train]
                 train_section[f"fold_{fold_id}"] = [tr_ids_present, va_ids_present]
         else:
             present_train = set(str(i) for i in self.X_train.index)
-            present_test  = set(str(i) for i in self.X_test.index)
+            present_test = set(str(i) for i in self.X_test.index)
 
             fold_id = 0
             for train, val in zip(X_folds_train, X_folds_val):
@@ -676,7 +670,7 @@ class ModelTrainer:
         print(f"Wrote splits to: {filepath}")
         return filepath
 
-    def config_index_compatiblilty(self, x: pd.DataFrame, index_list:list, y: pd.Series= None):
+    def config_index_compatiblilty(self, x: pd.DataFrame, index_list: list, y: pd.Series = None):
         """
         Ensure that idx in index_list are also index in x and y
         x: Data wihtout prediction label
@@ -709,15 +703,22 @@ class ModelTrainer:
                         if str(id) != str(x_index):
                             if str(id) in str(x_index):
                                 x.loc[x_index, "correct_index"] = str(id)
-                                self.logger.info("Found {} as a part of {}. Please double check the correct transformation and correct if necessay!".format(str(id), str(x_index)))
-                                print("Found {} as a part of {}. Please double check the correct transformation and correct if necessay!".format(str(id), str(x_index)))
-                                self.error.warning("Found {} as a part of {}. Please double check the correct transformation and correct if necessay!".format(str(id), str(x_index)))
+                                self.logger.info(
+                                    "Found {} as a part of {}. Please double check the correct transformation and correct if necessay!".format(
+                                        str(id), str(x_index)))
+                                print(
+                                    "Found {} as a part of {}. Please double check the correct transformation and correct if necessay!".format(
+                                        str(id), str(x_index)))
+                                self.error.warning(
+                                    "Found {} as a part of {}. Please double check the correct transformation and correct if necessay!".format(
+                                        str(id), str(x_index)))
                                 break
             else:
                 x.loc[x_index, "correct_index"] = str(x_index)
 
         if x['correct_index'].isnull().sum() > 0:
-            self.error.error("Could not resolve index incompatibility! Check train/test/validation index and syncronize it.")
+            self.error.error(
+                "Could not resolve index incompatibility! Check train/test/validation index and syncronize it.")
             print("Could not resolve index incompatibility! Check train/test/validation index and syncronize it.")
             return None, None
             # raise ValueError("Could not resolve index incompatibility! Check train/test/validation index and syncronize it.")
@@ -731,13 +732,13 @@ class ModelTrainer:
 
             x.set_index("correct_index", inplace=True)
             x.index = x.index.rename('ID')
-            x.index = x.index.astype(str, copy = False)
+            x.index = x.index.astype(str, copy=False)
 
             if not y is None:
                 y = x[self.Prediction_Label]
-                x.drop([self.Prediction_Label], axis = 1, inplace = True) 
+                x.drop([self.Prediction_Label], axis=1, inplace=True)
 
-        return x,y
+        return x, y
 
     def verify_scoring_matrics(self):
         """
@@ -774,8 +775,9 @@ class ModelTrainer:
                     str(self.task)))
 
         print(3 * "#", "Performing", self.task)
-        print("Detected {} Predictions Labels: {}".format(str(len(self.data[self.Prediction_Label].unique())),str(self.data[self.Prediction_Label].unique())))
-        print("Feature space",self.data.shape)
+        print("Detected {} Predictions Labels: {}".format(str(len(self.data[self.Prediction_Label].unique())),
+                                                          str(self.data[self.Prediction_Label].unique())))
+        print("Feature space", self.data.shape)
 
     def random_control(self, random_state: int = None):
         """
@@ -806,7 +808,7 @@ class ModelTrainer:
 
         # Compute class distribution
         class_counts = df[label_col].value_counts()
-        
+
         # Calculate imbalance ratio
         majority_class = class_counts.max()
         minority_class = class_counts.min()
@@ -814,7 +816,6 @@ class ModelTrainer:
 
         # Predict imbalance
         is_imbalanced = imbalance_ratio > threshold
-
 
         # Check if the imbalance is significant
         total_samples = len(df)
@@ -826,9 +827,9 @@ class ModelTrainer:
             minority_class = class_counts_total.min()
             total_samples = len(self.data)
 
-        imbalance_percentage = round((majority_class / total_samples),1) * 100
+        imbalance_percentage = round((majority_class / total_samples), 1) * 100
         is_significant = imbalance_percentage >= 70  # Consider significant if one class dominates >70%
-        
+
         if is_significant:
             print(f"Class imbalance is significant in dataset. {self.imbalance_method} will be applied")
             self.logger.info(f"Class imbalance is significant in dataset. {self.imbalance_method} will be applied")
@@ -859,11 +860,11 @@ class ModelTrainer:
         string_cols = df.select_dtypes(include=['object']).columns.tolist()
         num_cols = df.select_dtypes(exclude=['object']).columns.tolist()
         num_cols.remove(label_col)  # Keep label column separate
-        
+
         # Store string values separately (indexed by ID)
         string_values = df[string_cols].copy()
         df = df[num_cols + [label_col]]  # Keep only numeric and target column
-        
+
         # Oversampling method selection
         if method == 'SMOTE':
             sampler = SMOTE(random_state=random_state)
@@ -878,17 +879,18 @@ class ModelTrainer:
             else:
                 sampler = RandomUnderSampler(random_state=random_state)
         elif method == 'RepeatedEditedNearestNeighbours':
-            sampler = RepeatedEditedNearestNeighbours(n_jobs= self.n_cpus)
+            sampler = RepeatedEditedNearestNeighbours(n_jobs=self.n_cpus)
         else:
-            raise ValueError("Unsupported method. Use 'SMOTE', 'BorderlineSMOTE', 'RepeatedEditedNearestNeighbours', 'RandomOver' or 'RandomUnder'")
-        
+            raise ValueError(
+                "Unsupported method. Use 'SMOTE', 'BorderlineSMOTE', 'RepeatedEditedNearestNeighbours', 'RandomOver' or 'RandomUnder'")
+
         # Apply oversampling
         X_resampled, y_resampled = sampler.fit_resample(df.drop(columns=[label_col]), df[label_col])
-        
+
         # Create new dataframe
         df_resampled = pd.DataFrame(X_resampled, columns=df.drop(columns=[label_col]).columns)
         df_resampled[label_col] = y_resampled
-        
+
         # Assign new IDs, mark simulated ones
         original_ids = df.index.tolist()
 
@@ -900,7 +902,7 @@ class ModelTrainer:
                 new_index = original_ids + simulated_ids
             else:
                 new_index = original_ids
-            
+
             df_resampled.index = new_index
 
             # Re-integrate string values
@@ -910,7 +912,7 @@ class ModelTrainer:
                 for sim_id in simulated_ids:
                     orig_id = np.random.choice(original_ids)  # Randomly assign an original ID's string values
                     final_string_values.loc[sim_id, col] = string_values.loc[orig_id, col]
-            
+
             # Merge numerical and string values back
             df_final = df_resampled.join(final_string_values)
         else:
@@ -918,7 +920,6 @@ class ModelTrainer:
             df_final = df_resampled
 
         return df_final
-
 
     def feature_format_check(self):
         """
@@ -931,8 +932,9 @@ class ModelTrainer:
         # Check for correct feature format
         for feature in tqdm(feature_names, desc="Checking Feature Format", unit="Feature"):
             if feature in self.X.columns:
-                self.X[feature] = pd.to_numeric(self.X[feature], downcast='float', errors='ignore') # self.X[feature].astype(float)
-                
+                self.X[feature] = pd.to_numeric(self.X[feature], downcast='float',
+                                                errors='ignore')  # self.X[feature].astype(float)
+
                 # remove if column is None
                 if feature is None:
                     if feature in self.X.columns:
@@ -942,7 +944,7 @@ class ModelTrainer:
                 if self.X[feature].dtype == "object":
                     # for format problems if there is a , as digit seperator we need to convert it accordingly
                     try:
-                        self.X[feature] = self.X[feature].replace(',','.', regex=True).astype(float)
+                        self.X[feature] = self.X[feature].replace(',', '.', regex=True).astype(float)
                     except:
                         # if this is not the problem it might be a string parameter
                         self.error.warning("Need to drop {} because it is not a numerical feature.".format(feature))
@@ -993,44 +995,60 @@ class ModelTrainer:
             IDX_not_included = False
             for idx in self.train_idx:
                 if idx not in self.data.index.to_list():
-                    self.error.warning("Provided Training or Testing index {} is not included in data. Trying to fix this ...".format(str(idx)))
-                    print("Provided Training or Testing index {} is not included in data. Trying to fix this ...".format(str(idx)))
+                    self.error.warning(
+                        "Provided Training or Testing index {} is not included in data. Trying to fix this ...".format(
+                            str(idx)))
+                    print(
+                        "Provided Training or Testing index {} is not included in data. Trying to fix this ...".format(
+                            str(idx)))
                     IDX_not_included = True
                     break
 
             if not IDX_not_included:
                 for idx in self.test_idx:
                     if idx not in self.data.index.to_list():
-                        self.error.warning("Provided Training or Testing index {} is not included in data. Trying to fix this ...".format(str(idx)))
-                        print("Provided Training or Testing index {} is not included in data. Trying to fix this ...".format(str(idx)))
+                        self.error.warning(
+                            "Provided Training or Testing index {} is not included in data. Trying to fix this ...".format(
+                                str(idx)))
+                        print(
+                            "Provided Training or Testing index {} is not included in data. Trying to fix this ...".format(
+                                str(idx)))
                         IDX_not_included = True
                         break
             # get path to selected feautes
 
             # check if index config is wrong
             if IDX_not_included:
-                data, _ = self.config_index_compatiblilty(x=self.data.copy(), index_list=self.train_idx + self.test_idx, y= None) 
-                
+                data, _ = self.config_index_compatiblilty(x=self.data.copy(), index_list=self.train_idx + self.test_idx,
+                                                          y=None)
+
                 if not isinstance(self.train_idx[0], str):
                     self.train_idx = [str(e) for e in self.train_idx]
-                    self.test_idx = [str(e) for e in self.test_idx]        
+                    self.test_idx = [str(e) for e in self.test_idx]
 
                 if not data is None:
                     self.data = data
                 else:
                     if self.selected_features_path is None:
-                        selected_features_path = str(Path(self.out_folder).parent) + "/selected_features/Feature_selection_"
+                        selected_features_path = str(
+                            Path(self.out_folder).parent) + "/selected_features/Feature_selection_"
                     else:
                         selected_features_path = self.selected_features_path + "Feature_selection_"
 
                     selected_feature_file_path = glob.glob(selected_features_path + "*.csv")
 
                     if len(selected_feature_file_path) > 1:
-                        self.error.error("Could not perform model prediction! Can not find correct feature set from selection and provided IDs are not fitting to data. Found files: " + str(selected_feature_file_path))
-                        raise ValueError("Could not perform model prediction! Can not find correct feature set from selection and provided IDs are not fitting to data. Found files: " + str(selected_feature_file_path))
+                        self.error.error(
+                            "Could not perform model prediction! Can not find correct feature set from selection and provided IDs are not fitting to data. Found files: " + str(
+                                selected_feature_file_path))
+                        raise ValueError(
+                            "Could not perform model prediction! Can not find correct feature set from selection and provided IDs are not fitting to data. Found files: " + str(
+                                selected_feature_file_path))
                     elif len(selected_feature_file_path) == 0:
-                        self.error.error("Could not perform model prediction! Can not find correct feature set from selection and provided IDs are not fitting to data.  No files found.")
-                        raise ValueError("Could not perform model prediction! Can not find correct feature set from selection and provided IDs are not fitting to data. No files found.")
+                        self.error.error(
+                            "Could not perform model prediction! Can not find correct feature set from selection and provided IDs are not fitting to data.  No files found.")
+                        raise ValueError(
+                            "Could not perform model prediction! Can not find correct feature set from selection and provided IDs are not fitting to data. No files found.")
                     else:
                         selected_features = pd.read_csv(selected_feature_file_path[0], index_col=0)
                         self.logger.info("Trying to load data from selected features ...")
@@ -1040,29 +1058,35 @@ class ModelTrainer:
                         IDX_not_included = False
                         for idx in self.train_idx:
                             if idx not in self.data.index.to_list():
-                                self.error.warning("Provided Training or Testing index {} is not included in data at all.".format(str(idx)))
-                                #raise ValueError("Provided Training or Testing index {} is not included in data at all.".format(str(idx)))
+                                self.error.warning(
+                                    "Provided Training or Testing index {} is not included in data at all.".format(
+                                        str(idx)))
+                                # raise ValueError("Provided Training or Testing index {} is not included in data at all.".format(str(idx)))
                                 IDX_not_included = True
                                 break
 
                         if not IDX_not_included:
                             for idx in self.test_idx:
                                 if idx not in self.data.index.to_list():
-                                    self.error.warning("Provided Training or Testing index {} is not included in data at all.".format(str(idx)))
-                                    #raise ValueError("Provided Training or Testing index {} is not included in data at all.".format(str(idx)))
+                                    self.error.warning(
+                                        "Provided Training or Testing index {} is not included in data at all.".format(
+                                            str(idx)))
+                                    # raise ValueError("Provided Training or Testing index {} is not included in data at all.".format(str(idx)))
                                     IDX_not_included = True
                                     break
 
                         if IDX_not_included:
-                            data, _ = self.config_index_compatiblilty(x=self.data.copy(), index_list=self.train_idx + self.test_idx, y= None) 
+                            data, _ = self.config_index_compatiblilty(x=self.data.copy(),
+                                                                      index_list=self.train_idx + self.test_idx, y=None)
                             if not data is None:
                                 self.data = data
                             else:
-                                raise ValueError("Could not resolve index incompatibility! Check train/test/validation index and syncronize it.")
+                                raise ValueError(
+                                    "Could not resolve index incompatibility! Check train/test/validation index and syncronize it.")
 
                             if not isinstance(self.train_idx[0], str):
                                 self.train_idx = [str(e) for e in self.train_idx]
-                                self.test_idx = [str(e) for e in self.test_idx]                
+                                self.test_idx = [str(e) for e in self.test_idx]
 
         self.verify_task()
 
@@ -1070,12 +1094,12 @@ class ModelTrainer:
 
         # Proceed with label distribution plots etc. using these assignments.
         self.X = self.data.loc[:, self.data.columns != self.Prediction_Label]
-        
-        self.X = self.X.loc[:,~self.X.columns.duplicated()]
+
+        self.X = self.X.loc[:, ~self.X.columns.duplicated()]
 
         self.feature_format_check()
 
-         # check if files exist make train idx and test idx
+        # check if files exist make train idx and test idx
         if os.path.exists(self.train_indx_path) and os.path.exists(self.test_indx_path):
             self.train_idx = None
             self.test_idx = None
@@ -1102,9 +1126,11 @@ class ModelTrainer:
             miss_test = [i for i in test_ids if i not in available]
             miss_train = [i for i in train_pool_ids if i not in available]
             if miss_test:
-                self.logger.warning(f"{len(miss_test)} test IDs from splits.json not found in dataset. Example: {miss_test[:5]}")
+                self.logger.warning(
+                    f"{len(miss_test)} test IDs from splits.json not found in dataset. Example: {miss_test[:5]}")
             if miss_train:
-                self.logger.warning(f"{len(miss_train)} train/val IDs from splits.json not found in dataset. Example: {miss_train[:5]}")
+                self.logger.warning(
+                    f"{len(miss_train)} train/val IDs from splits.json not found in dataset. Example: {miss_train[:5]}")
 
             valid_test_ids = [i for i in test_ids if i in available]
             valid_train_ids = [i for i in train_pool_ids if i in available]
@@ -1112,13 +1138,13 @@ class ModelTrainer:
             # Assign final splits
             self.X_train = self.X.loc[valid_train_ids]
             self.y_train = self.y.loc[valid_train_ids]
-            self.X_test  = self.X.loc[valid_test_ids]
-            self.y_test  = self.y.loc[valid_test_ids]
+            self.X_test = self.X.loc[valid_test_ids]
+            self.y_test = self.y.loc[valid_test_ids]
 
             # For CV optimization, we do not keep a single fixed X_val here
             self.X_val = pd.DataFrame()
             self.y_val = pd.Series(dtype=self.y_train.dtype)
-            
+
             # Prepare CV splitter that uses EXACT fold membership for (train, val)
             self.cv = self._make_listfold_splitter_from_ids(self.X_train.index, folds)
             self.cross_val_splits = n_folds
@@ -1129,16 +1155,16 @@ class ModelTrainer:
 
             # Persist indices for reproducibility (same format as before)
             self.train_idx = valid_train_ids
-            self.test_idx  = valid_test_ids
+            self.test_idx = valid_test_ids
 
-            pd.Series({"ID":self.train_idx}, index=self.train_idx).to_csv(self.train_indx_path, index=False)
-            pd.Series({"ID":self.test_idx}, index=self.test_idx).to_csv(self.test_indx_path, index=False)
+            pd.Series({"ID": self.train_idx}, index=self.train_idx).to_csv(self.train_indx_path, index=False)
+            pd.Series({"ID": self.test_idx}, index=self.test_idx).to_csv(self.test_indx_path, index=False)
 
             try:
                 self.export_used_splits_simple()  # -> <out_folder>/splits_used.json
             except Exception as e:
                 self.error.warning(f"Failed to write splits_used.json: {e}")
-        
+
         if (not self.train_idx is None) and (not self.test_idx is None):
 
             self.X_train = self.X.loc[self.train_idx]
@@ -1157,20 +1183,20 @@ class ModelTrainer:
                 self.y_val = self.y.loc[self.val_idx]
 
         elif os.path.exists(self.train_indx_path) and os.path.exists(self.test_indx_path):
-            
-            from rptk.rptk import RPTK
-            
+
+            from rptk import RPTK
+
             # recreate train/val/test set from file
             train_idx_df = pd.read_csv(self.train_indx_path)
             test_idx_df = pd.read_csv(self.test_indx_path)
-            
-            #if train_idx_df["ID"].str.isnumeric().any() or test_idx_df["ID"].str.isnumeric().any():
+
+            # if train_idx_df["ID"].str.isnumeric().any() or test_idx_df["ID"].str.isnumeric().any():
             #    train_idx_df = RPTK.normalize_id_length_end(train_idx_df, id_col="ID")
             #    test_idx_df = RPTK.normalize_id_length_end(test_idx_df, id_col="ID")
- 
+
             self.train_idx = train_idx_df.ID.astype('str').to_list()
             self.test_idx = test_idx_df.ID.astype('str').to_list()
-            
+
             idxs = self.train_idx + self.test_idx
             incopartible_idxs = []
             index_compatible = True
@@ -1181,32 +1207,32 @@ class ModelTrainer:
             # check for correct index format
             for x_index in self.X.index.to_list():
                 if x_index not in idxs:
-                    index_compatible=False
+                    index_compatible = False
                     incopartible_idxs.append(x_index)
                     self.logger.info(f"Need to configure index for syncronization {x_index}")
                     print(f"Need to configure index for syncronization {x_index}")
-                    
+
             # only a few index are not included in the data
             if len(incopartible_idxs) != len(self.X.index.to_list()):
-                 self.X.drop(incopartible_idxs, inplace=True)
-                 self.y.drop(incopartible_idxs, inplace=True)
-                 index_compatible=True
+                self.X.drop(incopartible_idxs, inplace=True)
+                self.y.drop(incopartible_idxs, inplace=True)
+                index_compatible = True
 
             if not index_compatible:
 
-                X ,y = self.config_index_compatiblilty(x=self.X.copy(), y=self.y.copy(), index_list=idxs)
+                X, y = self.config_index_compatiblilty(x=self.X.copy(), y=self.y.copy(), index_list=idxs)
 
                 if (not X is None) & (not y is None):
                     self.X = X
                     self.y = y
                 else:
-                    print(self.X.index[0],self.y.index[0])
-                    raise ValueError("Could not resolve index incompatibility! Check train/test/validation index and syncronize it.")
+                    print(self.X.index[0], self.y.index[0])
+                    raise ValueError(
+                        "Could not resolve index incompatibility! Check train/test/validation index and syncronize it.")
 
                 if not isinstance(self.train_idx[0], str):
                     self.train_idx = [str(e) for e in self.train_idx]
                     self.test_idx = [str(e) for e in self.test_idx]
-
 
             self.X_train = self.X.loc[self.train_idx]
             self.y_train = self.y.loc[self.train_idx]
@@ -1220,7 +1246,7 @@ class ModelTrainer:
                 self.y_val = pd.Series()
 
             elif os.path.exists(self.val_indx_path):
-                
+
                 val_indx_df = pd.read_csv(self.val_indx_path)
                 if val_indx_df["ID"].str.isnumeric().any():
                     val_indx_df = RPTK.normalize_id_length_end(val_indx_df, id_col="ID")
@@ -1266,7 +1292,7 @@ class ModelTrainer:
 
                 if self.X_train.index.duplicated().sum() > 0:
 
-                    train_idx, val_idx = self.get_unique_index(X=self.X_train.copy(), 
+                    train_idx, val_idx = self.get_unique_index(X=self.X_train.copy(),
                                                                y=self.y_train.copy(),
                                                                random_state=random_state)
 
@@ -1301,8 +1327,8 @@ class ModelTrainer:
 
         if "Transformations" in self.X_train.columns:
             # remove information about Image Transformation from feature space
-            self.X_train.drop(['Transformations'], axis = 1, inplace = True) 
-            
+            self.X_train.drop(['Transformations'], axis=1, inplace=True)
+
         if "Transformations" in self.X_test.columns:
             self.logger.info("Remove transformed samples from test set.")
             print("Remove transformed samples from test set.")
@@ -1313,9 +1339,9 @@ class ModelTrainer:
 
             # No transformed samples in Test set only features from original Images
             X_test_with_label = X_test_with_label.loc[X_test_with_label['Transformations'] == 0]
-            
+
             # remove information about Image Transformation from feature space
-            X_test_with_label.drop(['Transformations'], axis = 1, inplace = True) 
+            X_test_with_label.drop(['Transformations'], axis=1, inplace=True)
 
             self.y_test = X_test_with_label[self.Prediction_Label]
 
@@ -1325,7 +1351,7 @@ class ModelTrainer:
 
         if len(self.X_val) > 0:
             if 'Transformations' in self.X_val.columns:
-                self.X_val.drop(['Transformations'], axis = 1, inplace = True)
+                self.X_val.drop(['Transformations'], axis=1, inplace=True)
 
         # Save Training
         pd.Series(train_idx, index=train_idx).to_csv(self.train_indx_path, index=False)
@@ -1342,16 +1368,15 @@ class ModelTrainer:
                            y=self.y,
                            RunID=self.RunID,
                            logger=self.logger,
-                           error=self.error, task = self.task).plot_label_distribution(training_series=self.y_train,
-                                                                     testing_series=self.y_test,
-                                                                     validation_series=self.y_val,
-                                                                     )
-
+                           error=self.error, task=self.task).plot_label_distribution(training_series=self.y_train,
+                                                                                     testing_series=self.y_test,
+                                                                                     validation_series=self.y_val,
+                                                                                     )
 
         self.logger.info("Training data " + str(self.X_train.shape))
         self.logger.info("Validation data " + str(self.X_val.shape))
         self.logger.info("Testing data " + str(self.X_test.shape))
-        
+
         print("Training data " + str(self.X_train.shape))
         print("Validation data " + str(self.X_val.shape))
         print("Testing data " + str(self.X_test.shape))
@@ -1366,18 +1391,18 @@ class ModelTrainer:
 
         if not os.path.exists(train_data_path):
             X_train_incl_label = self.X_train.copy()
-            #X_train_incl_label[self.Prediction_Label] = self.y_train.copy()
+            # X_train_incl_label[self.Prediction_Label] = self.y_train.copy()
             X_train_incl_label.to_csv(train_data_path)
 
         if not os.path.exists(val_data_path):
             if len(self.X_val) > 0:
                 X_val_incl_label = self.X_val.copy()
-                #X_val_incl_label[self.Prediction_Label] = self.y_val.copy()
+                # X_val_incl_label[self.Prediction_Label] = self.y_val.copy()
                 X_val_incl_label.to_csv(val_data_path)
 
         if not os.path.exists(test_data_path):
             X_test_incl_label = self.X_test.copy()
-            #X_test_incl_label[self.Prediction_Label] = self.y_test.copy()
+            # X_test_incl_label[self.Prediction_Label] = self.y_test.copy()
             X_test_incl_label.to_csv(test_data_path)
 
         train_data = self.X_train.copy()
@@ -1386,34 +1411,39 @@ class ModelTrainer:
         imbalance = self.predict_class_imbalance(train_data, self.Prediction_Label)
         if imbalance["is_significant"]:
             if not self.imbalance_method is None:
-                print(f"Significant class imbalance detected {imbalance['class_distribution']}. Applying {self.imbalance_method}.")
-                self.error.warning(f"Significant class imbalance detected {imbalance['class_distribution']}. Applying {self.imbalance_method}.")
+                print(
+                    f"Significant class imbalance detected {imbalance['class_distribution']}. Applying {self.imbalance_method}.")
+                self.error.warning(
+                    f"Significant class imbalance detected {imbalance['class_distribution']}. Applying {self.imbalance_method}.")
 
-                train_data = self.resolve_class_imbalance(df=train_data, label_col=self.Prediction_Label, method=self.imbalance_method, random_state=random_state)
+                train_data = self.resolve_class_imbalance(df=train_data, label_col=self.Prediction_Label,
+                                                          method=self.imbalance_method, random_state=random_state)
                 self.X_train = train_data.drop(columns=[self.Prediction_Label])
                 self.y_train = train_data[self.Prediction_Label]
 
                 PerformancePlotter(output_path=self.out_folder + "/plots",
-                                    X=self.X,
-                                    y=self.y,
-                                    RunID=self.RunID + "_imbalance_resolved",
-                                    logger=self.logger,
-                                    error=self.error, 
-                                    task = self.task).plot_label_distribution(training_series=self.y_train,
-                                                                                testing_series=self.y_test,
-                                                                                validation_series=self.y_val,
-                                                                                )
+                                   X=self.X,
+                                   y=self.y,
+                                   RunID=self.RunID + "_imbalance_resolved",
+                                   logger=self.logger,
+                                   error=self.error,
+                                   task=self.task).plot_label_distribution(training_series=self.y_train,
+                                                                           testing_series=self.y_test,
+                                                                           validation_series=self.y_val,
+                                                                           )
 
                 self.logger.info("Upsampled Training data " + str(self.X_train.shape))
                 self.logger.info("Validation data " + str(self.X_val.shape))
                 self.logger.info("Testing data " + str(self.X_test.shape))
-                
+
                 print("Upsampled Training data " + str(self.X_train.shape))
                 print("Validation data " + str(self.X_val.shape))
                 print("Testing data " + str(self.X_test.shape))
             else:
-                print(f"Significant class imbalance detected {imbalance['class_distribution']}. No imbalance resolution method specified.")
-                self.error.warning(f"Significant class imbalance detected {imbalance['class_distribution']}. No imbalance resolution method specified.")
+                print(
+                    f"Significant class imbalance detected {imbalance['class_distribution']}. No imbalance resolution method specified.")
+                self.error.warning(
+                    f"Significant class imbalance detected {imbalance['class_distribution']}. No imbalance resolution method specified.")
 
     # 2. Get model/s
     def generate_model_instance(self):
@@ -1429,7 +1459,8 @@ class ModelTrainer:
             #                     num_threads=self.n_cpus)
             if ("cuda" in self.device) or ("gpu" in self.device):
                 # RF = RandomForestClassifier_GPU(random_state=random.seed(self.rand_state))
-                LGBM = LGBMClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device, verbose=-1)
+                LGBM = LGBMClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device,
+                                      verbose=-1)
 
                 XGBoost = XGBClassifier(use_label_encoder=False, n_jobs=self.n_cpus, eval_metric="auc",
                                         device=self.device, verbosity=0,
@@ -1445,7 +1476,8 @@ class ModelTrainer:
                     seed=self.rand_state)
             else:
 
-                LGBM = LGBMClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device, verbose=-1,
+                LGBM = LGBMClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device,
+                                      verbose=-1,
                                       num_threads=self.n_cpus)
 
                 XGBoost = XGBClassifier(use_label_encoder=False, n_jobs=int(self.n_cpus / 2), eval_metric="auc",
@@ -1462,7 +1494,8 @@ class ModelTrainer:
                 )
 
             linear_svc = SVC(kernel="linear", random_state=random.seed(self.rand_state), probability=True)
-            svc = SVC(kernel="rbf", random_state=random.seed(self.rand_state), probability=True)  # loss="squared_hinge",
+            svc = SVC(kernel="rbf", random_state=random.seed(self.rand_state),
+                      probability=True)  # loss="squared_hinge",
             # lasso = Lasso(random_state=random.seed(self.rand_state))
 
         elif self.task == "multi_class_classification":
@@ -1472,7 +1505,8 @@ class ModelTrainer:
             RF = RandomForestClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state))
             if ("cuda" in self.device) or ("gpu" in self.device):
                 # RF = RandomForestClassifier_GPU(random_state=random.seed(self.rand_state))
-                LGBM = LGBMClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device, verbose=-1,
+                LGBM = LGBMClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device,
+                                      verbose=-1,
                                       num_threads=self.n_cpus)
 
                 XGBoost = XGBClassifier(use_label_encoder=False, n_jobs=self.n_cpus, eval_metric="auc",
@@ -1490,10 +1524,12 @@ class ModelTrainer:
                     seed=self.rand_state)
             else:
                 RF = RandomForestClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state))
-                LGBM = LGBMClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device, verbose=-1)
+                LGBM = LGBMClassifier(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device,
+                                      verbose=-1)
 
                 XGBoost = XGBClassifier(use_label_encoder=False, n_jobs=int(self.n_cpus / 2), eval_metric="auc",
-                                        device=self.device, verbosity=0, num_class=int(len(self.data[self.Prediction_Label].unique())),
+                                        device=self.device, verbosity=0,
+                                        num_class=int(len(self.data[self.Prediction_Label].unique())),
                                         random_state=random.seed(self.rand_state), objective="multi:softprob")
 
                 TabNet = TabNetClassifier(  # feature_columns=self.X.columns.to_list(),
@@ -1504,7 +1540,8 @@ class ModelTrainer:
                     device_name="cpu",
                     seed=self.rand_state)
 
-            linear_svc = SVC(kernel="linear", random_state=random.seed(self.rand_state), probability=True)  # loss="squared_hinge",
+            linear_svc = SVC(kernel="linear", random_state=random.seed(self.rand_state),
+                             probability=True)  # loss="squared_hinge",
             svc = SVC(kernel="rbf", random_state=random.seed(self.rand_state), probability=True)
             # lasso = Lasso(random_state=random.seed(self.rand_state))
 
@@ -1515,7 +1552,8 @@ class ModelTrainer:
 
             if ("cuda" in self.device) or ("gpu" in self.device):
                 # RF = RandomForestRegressor_GPU(random_state=random.seed(self.rand_state))
-                LGBM = LGBMRegressor(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device, verbose=-1)
+                LGBM = LGBMRegressor(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device,
+                                     verbose=-1)
                 # params = {"tree_method": 'gpu_hist', "predictor": 'gpu_predictor'}
 
                 XGBoost = XGBRegressor(use_label_encoder=False, n_jobs=int(self.n_cpus / 2), eval_metric="mae",
@@ -1537,7 +1575,8 @@ class ModelTrainer:
             else:
                 RF = RandomForestRegressor(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state))
 
-                LGBM = LGBMRegressor(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device, verbose=-1,
+                LGBM = LGBMRegressor(n_jobs=self.n_cpus, random_state=random.seed(self.rand_state), device=self.device,
+                                     verbose=-1,
                                      num_threads=self.n_cpus)
 
                 XGBoost = XGBRegressor(use_label_encoder=False, n_jobs=int(self.n_cpus / 2), eval_metric="mae",
@@ -1545,7 +1584,7 @@ class ModelTrainer:
                                        random_state=random.seed(self.rand_state), objective="reg:absoluteerror")
 
                 TabNet = TabNetRegressor(n_d=24, n_a=24, n_steps=1, gamma=1.3,
-                                        lambda_sparse=0, optimizer_fn=torch.optim.Adam,
+                                         lambda_sparse=0, optimizer_fn=torch.optim.Adam,
                                          optimizer_params=dict(lr=2e-2, weight_decay=1e-5),
                                          mask_type='entmax',
                                          scheduler_params=dict(mode="min",
@@ -1705,13 +1744,16 @@ class ModelTrainer:
                     try:
                         cols_when_model_builds = loaded_model.feature_names_in_.tolist()
                     except:
-                        print(f"Could not load features from {str(type(loaded_model).__name__)}. Taking features from input ...")
-                        self.logger.info(f"Could not load features from {str(type(loaded_model).__name__)}. Taking features from input ...")
+                        print(
+                            f"Could not load features from {str(type(loaded_model).__name__)}. Taking features from input ...")
+                        self.logger.info(
+                            f"Could not load features from {str(type(loaded_model).__name__)}. Taking features from input ...")
                         cols_when_model_builds = self.X_train_global.copy().columns.to_list()
-                
+
                 if len(cols_when_model_builds) < len(self.X_train.columns.to_list()):
                     features_in_data = self.X_train.columns.to_list()
-                    missing_features = [feature for feature in features_in_data if feature not in cols_when_model_builds]
+                    missing_features = [feature for feature in features_in_data if
+                                        feature not in cols_when_model_builds]
                     if len(missing_features) > 0:
                         print(f"Model is missing features for training: {missing_features}")
                         self.error.warning(f"Model is missing features for training: {missing_features}")
@@ -1731,17 +1773,20 @@ class ModelTrainer:
 
                 self.error.warning("Loading {} without adapting feature order! {}".format(model_name, ex))
                 print("Loading {} without adapting feature order! {}".format(model_name, ex))
-                
+
                 try:
                     cols_when_model_builds = loaded_model.feature_names_in_.tolist()
                 except:
-                    print(f"Could not load features from {str(type(loaded_model).__name__)}. Taking features from input ...")
-                    self.logger.info(f"Could not load features from {str(type(loaded_model).__name__)}. Taking features from input ...")
+                    print(
+                        f"Could not load features from {str(type(loaded_model).__name__)}. Taking features from input ...")
+                    self.logger.info(
+                        f"Could not load features from {str(type(loaded_model).__name__)}. Taking features from input ...")
                     cols_when_model_builds = self.X_train_global.copy().columns.to_list()
-                
+
                 if len(cols_when_model_builds) < len(self.X_train.columns.to_list()):
                     features_in_data = self.X_train.columns.to_list()
-                    missing_features = [feature for feature in features_in_data if feature not in cols_when_model_builds]
+                    missing_features = [feature for feature in features_in_data if
+                                        feature not in cols_when_model_builds]
                     if len(missing_features) > 0:
                         print(f"Model is missing features for training: {missing_features}")
                         self.error.warning(f"Model is missing features for training: {missing_features}")
@@ -1771,7 +1816,7 @@ class ModelTrainer:
         :param param_range: range of parameter to test stability and performance
         :return: x_max, y_max, x_stable, y_stable performance measure of model with max performance and most stable performance
         """
-        
+
         if "TabNet" in type(model).__name__:
             train_score = []
             test_score = []
@@ -1811,17 +1856,17 @@ class ModelTrainer:
                             weights=1,
                             drop_last=True
                         )
-                        
+
                         # Calculate the averade AUC from all epochs
                         train_score_tmp.append(sum(model.history['train_auc']) / len(model.history['train_auc']))
                         test_score_tmp.append(sum(model.history['valid_auc']) / len(model.history['valid_auc']))
-                        
+
                     else:
                         model = model.fit(X_train, y_train)
-                        
+
                         y_pred_prob_train = model.predict_proba(X_train)[:, 1]
                         y_pred_prob_val = model.predict_proba(X_val)[:, 1]
-                        
+
                         if self.task == "binary_classification":
                             train_score_tmp.append(roc_auc_score(y_train, y_pred_prob_train))
                             test_score_tmp.append(roc_auc_score(y_val, y_pred_prob_val))
@@ -1829,28 +1874,30 @@ class ModelTrainer:
                             train_score_tmp.append(roc_auc_score(y_train, y_pred_prob_train, multi_class='ovr'))
                             test_score_tmp.append(roc_auc_score(y_val, y_pred_prob_val, multi_class='ovr'))
                         else:
-                            self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                            raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                        
+                            self.error.error(
+                                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                            raise ValueError(
+                                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+
                     # val_preds = model.predict_proba(X_val.values)
                     # val_auc = roc_auc_score(y_score=val_preds[:,1], y_true=y_val)
 
                     # train_preds = model.predict_proba(X_train.values)
                     # train_auc = roc_auc_score(y_score=train_preds[:,1], y_true=y_train)
-                    
+
                     pbar.update(1)
-                    
+
                 train_score.append(train_score_tmp)
                 test_score.append(test_score_tmp)
 
             pbar.close()
             x_max, y_max, x_stable, y_stable = PerformancePlotter(output_path=self.plot_save_dir + "/pretraining",
-                                                                    X=self.X_train.values.copy(),
-                                                                    y=self.y_train.values.copy(),
-                                                                    y_pred=None,
-                                                                    RunID=self.RunID,
-                                                                    error=self.error,
-                                                                    logger=self.logger).plot_hyperparameter_validation_curve(
+                                                                  X=self.X_train.values.copy(),
+                                                                  y=self.y_train.values.copy(),
+                                                                  y_pred=None,
+                                                                  RunID=self.RunID,
+                                                                  error=self.error,
+                                                                  logger=self.logger).plot_hyperparameter_validation_curve(
                 train_score_Num=np.array(train_score),
                 test_score_Num=np.array(test_score),
                 model=model,
@@ -1948,7 +1995,7 @@ class ModelTrainer:
                     "n_estimators": parameter,  # Number of Trees for the forest
                     "ccp_alpha": trial.suggest_categorical("ccp_alpha", [0.001, 0.01, 0.02, 0.03]),
                     'max_depth': trial.suggest_categorical('max_depth', [None, 2, 4, 6, 8, 10]),  # Max depth of a tree
-                    "max_samples": trial.suggest_categorical('max_samples', [0.2, 0.4, 0.6, 0.8,]),
+                    "max_samples": trial.suggest_categorical('max_samples', [0.2, 0.4, 0.6, 0.8, ]),
                     "max_features": trial.suggest_categorical("max_features", ["sqrt", None, 0.2, 0.4, 0.6, 0.8, 1.0]),
                     "criterion": trial.suggest_categorical("criterion", ["gini", "entropy"]),
                     'random_state': random.seed(self.rand_state)
@@ -2012,7 +2059,8 @@ class ModelTrainer:
                     parameter = trial.suggest_int("n_estimators", 200, 800, step=10)
                 else:
                     parameter = int(parameter)
-                if len(self.X_train_optimize.copy()) < 500: # if sample size too high the model training is hanging using this parameters
+                if len(
+                    self.X_train_optimize.copy()) < 500:  # if sample size too high the model training is hanging using this parameters
                     self.hyperparameter = {
                         "n_estimators": parameter,  # Number of Trees for the forest
                         "ccp_alpha": trial.suggest_float("ccp_alpha", 0.001, 0.03, step=0.01),
@@ -2020,9 +2068,11 @@ class ModelTrainer:
                         "validation_fraction": trial.suggest_float('validation_fraction', 0.1, 0.4, step=0.01),
                         "n_iter_no_change": trial.suggest_int("n_iter_no_change", 1, 100, step=5),
                         "max_leaf_nodes": trial.suggest_categorical("max_leaf_nodes",
-                                                                    hypergenerator.generate_max_leaf_nodes(self.X_train_optimize.copy())),
+                                                                    hypergenerator.generate_max_leaf_nodes(
+                                                                        self.X_train_optimize.copy())),
                         "warm_start": trial.suggest_categorical("warm_start", [False, True]),
-                        "max_features": trial.suggest_categorical("max_features", ["sqrt", None, 0.2, 0.4, 0.6, 0.8, 1.0]),
+                        "max_features": trial.suggest_categorical("max_features",
+                                                                  ["sqrt", None, 0.2, 0.4, 0.6, 0.8, 1.0]),
                         "learning_rate": trial.suggest_float("learning_rate", 0.005, .025, step=0.001),
                         "criterion": trial.suggest_categorical("criterion", ["friedman_mse", "squared_error"]),
                         "tol": trial.suggest_float("tol", 1e-4, 0.3, step=0.01),
@@ -2035,7 +2085,8 @@ class ModelTrainer:
                         "n_estimators": parameter,  # Number of Trees for the forest
                         "ccp_alpha": trial.suggest_float("ccp_alpha", 0.001, 0.03, step=0.01),
                         'max_depth': trial.suggest_int('max_depth', 2, 30, step=3),  # Max depth of a tree
-                        "max_features": trial.suggest_categorical("max_features", ["sqrt", None, 0.2, 0.4, 0.6, 0.8, 1.0]),
+                        "max_features": trial.suggest_categorical("max_features",
+                                                                  ["sqrt", None, 0.2, 0.4, 0.6, 0.8, 1.0]),
                         "learning_rate": trial.suggest_float("learning_rate", 0.005, .025, step=0.001),
                         "criterion": trial.suggest_categorical("criterion", ["friedman_mse", "squared_error"]),
                         "tol": trial.suggest_float("tol", 1e-4, 0.3, step=0.01),
@@ -2268,8 +2319,10 @@ class ModelTrainer:
             elif self.task == "multi_class_classification":
                 auroc = roc_auc_score(self.y_val_optimize, y_pred_prob, multi_class='ovr')
             else:
-                self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                self.error.error(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                raise ValueError(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
         else:
             print("Can not calculate AUC without predictions! Error coming from fitting model.")
             self.error.warning("Can not calculate AUC without predictions! Error coming from fitting model.")
@@ -2414,21 +2467,20 @@ class ModelTrainer:
 
             if simple_model_name != "":
                 if not os.path.exists(self.out_folder + "/optimization_log/" + simple_model_name + "/"):
-                    os.makedirs(self.out_folder + "/optimization_log/" + simple_model_name + "/",exist_ok=True)
+                    os.makedirs(self.out_folder + "/optimization_log/" + simple_model_name + "/", exist_ok=True)
                 optimization_log_out_dir = self.out_folder + "/optimization_log/" + simple_model_name + "/"
 
             else:
                 if not os.path.exists(self.out_folder + "/optimization_log/" + model_name + "/"):
-                    os.makedirs(self.out_folder + "/optimization_log/" + model_name + "/",exist_ok=True)
+                    os.makedirs(self.out_folder + "/optimization_log/" + model_name + "/", exist_ok=True)
                 optimization_log_out_dir = self.out_folder + "/optimization_log/" + model_name + "/"
-
 
             if optimization_log_out_dir != "":
                 study.trials_dataframe().to_csv(
                     optimization_log_out_dir + model_name + "_optimization_summary.csv")
 
             else:
-                os.makedirs(self.out_folder + "/optimization_log/" + model_name + "/",exist_ok=True)
+                os.makedirs(self.out_folder + "/optimization_log/" + model_name + "/", exist_ok=True)
                 study.trials_dataframe().to_csv(
                     self.out_folder + "/optimization_log/" + model_name + "/" + model_name + "_optimization_summary.csv")
 
@@ -2463,45 +2515,45 @@ class ModelTrainer:
 
             try:
                 fig = optuna.visualization.plot_param_importances(study, target=lambda t: t.values[0],
-                                                                target_name="AUROC")
+                                                                  target_name="AUROC")
 
                 if simple_model_name != "":
                     fig.write_image(self.plot_save_dir + "/optimization/" + simple_model_name + "/" + model_name +
-                                "_" + self.RunID + "_hyperparameter_importance.png")
+                                    "_" + self.RunID + "_hyperparameter_importance.png")
                 else:
                     fig.write_image(self.plot_save_dir + "/optimization/" + model_name + "/" + study_name +
-                                "_" + self.RunID + "_hyperparameter_importance.png")
+                                    "_" + self.RunID + "_hyperparameter_importance.png")
             except Exception as ex:
                 self.error.warning("Could not plot hypereparameter importance: " + str(ex))
                 print("Could not plot hypereparameter importance: " + str(ex))
         else:
             try:
                 all_available_hyperparameter = HyperparameterConfigurator(model=model,
-                                                                        optimizer_lib=None,
-                                                                        logger=None,
-                                                                        error=None,
-                                                                        out_path="",
-                                                                        interested_hyperparameter=None,
-                                                                        extended_parameter_set=None)
+                                                                          optimizer_lib=None,
+                                                                          logger=None,
+                                                                          error=None,
+                                                                          out_path="",
+                                                                          interested_hyperparameter=None,
+                                                                          extended_parameter_set=None)
 
                 Hypergenerator = GridHyperParameterGenerator(
-                                                            model=model,
-                                                            x=self.X_train.copy(),
-                                                            y=self.y_train.copy(),
-                                                            use_optuna=self.use_optuna,
-                                                            extended_parameter_set=self.extended_parameter_set)
+                    model=model,
+                    x=self.X_train.copy(),
+                    y=self.y_train.copy(),
+                    use_optuna=self.use_optuna,
+                    extended_parameter_set=self.extended_parameter_set)
 
                 self.hyperparameter = Hypergenerator.generate_hyperparameter_set()
 
                 clf = GridSearchCV(estimator=model,
-                                    param_grid=self.hyperparameter,
-                                    cv=self.num_splits,
-                                    scoring=self.scoring,
-                                    n_jobs=self.n_cpus)
+                                   param_grid=self.hyperparameter,
+                                   cv=self.num_splits,
+                                   scoring=self.scoring,
+                                   n_jobs=self.n_cpus)
 
             except Exception as ex:
-                    self.error.warning("Could not plot hypereparameter importance: " + str(ex))
-                    print("Could not plot hypereparameter importance: " + str(ex))
+                self.error.warning("Could not plot hypereparameter importance: " + str(ex))
+                print("Could not plot hypereparameter importance: " + str(ex))
 
             if "TabNet" in type(model).__name__:
                 clf.fit(self.X_train.values, self.y_train.values)
@@ -2539,20 +2591,20 @@ class ModelTrainer:
         else:
             if "TabNet" in type(model).__name__:
                 best_model.fit(
-                                X_train=X_train.values,
-                                y_train=y_train.values,
-                                eval_set=[(X_train.values, y_train.values),
-                                        (X_val.values, y_val.values)],
-                                eval_name=['train', 'valid'],
-                                eval_metric=['auc'],
-                                max_epochs=self.optimization_iter,
-                                patience=10,
-                                batch_size=32,
-                                virtual_batch_size=32,
-                                num_workers=self.n_cpus,
-                                weights=1,
-                                drop_last=True
-                            )
+                    X_train=X_train.values,
+                    y_train=y_train.values,
+                    eval_set=[(X_train.values, y_train.values),
+                              (X_val.values, y_val.values)],
+                    eval_name=['train', 'valid'],
+                    eval_metric=['auc'],
+                    max_epochs=self.optimization_iter,
+                    patience=10,
+                    batch_size=32,
+                    virtual_batch_size=32,
+                    num_workers=self.n_cpus,
+                    weights=1,
+                    drop_last=True
+                )
             else:
                 best_model = best_model.fit(X_train, y_train)
 
@@ -2594,8 +2646,10 @@ class ModelTrainer:
             elif self.task == "multi_class_classification":
                 auroc_train.append(roc_auc_score(y_train, y_pred_prob, multi_class='ovr'))
             else:
-                self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                self.error.error(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                raise ValueError(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
         else:
             print("Can not calculate train AUC without predictions! Error coming from fitting model.")
             self.error.warning("Can not calculate train AUC without predictions! Error coming from fitting model.")
@@ -2606,8 +2660,10 @@ class ModelTrainer:
             elif self.task == "multi_class_classification":
                 auroc_val.append(roc_auc_score(y_val, y_pred_prob_val, multi_class='ovr'))
             else:
-                self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                self.error.error(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                raise ValueError(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
         else:
             print("Can not calculate validation AUC without predictions! Error coming from fitting model.")
             self.error.warning("Can not calculate validation AUC without predictions! Error coming from fitting model.")
@@ -2618,8 +2674,10 @@ class ModelTrainer:
             elif self.task == "multi_class_classification":
                 auroc_test.append(roc_auc_score(self.y_test, y_pred_prob_test, multi_class='ovr'))
             else:
-                self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                self.error.error(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                raise ValueError(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
         else:
             print("Can not calculate test AUC without predictions! Error coming from fitting model.")
             self.error.warning("Can not calculate test AUC without predictions! Error coming from fitting model.")
@@ -2671,7 +2729,7 @@ class ModelTrainer:
 
             feature_importance_output_path = feature_importance_folder + "/" + simple_model_name + "/" + model_name + "_feature_importances.csv"
         else:
-            feature_importance_output_path = feature_importance_folder + "/"+ model_name + "_feature_importances.csv"
+            feature_importance_output_path = feature_importance_folder + "/" + model_name + "_feature_importances.csv"
 
         feature_importances_df.to_csv(feature_importance_output_path, index=True)
 
@@ -2817,10 +2875,11 @@ class ModelTrainer:
         elif self.task == "multi_class_classification":
             auroc = roc_auc_score(y_true, y_pred_prob, multi_class='ovr')
         else:
-            self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-            raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+            self.error.error(
+                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+            raise ValueError(
+                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
 
-        
         bal_acc = balanced_accuracy_score(y_true, y_pred)  # , adjusted=True)
 
         sens_sample_statistic, sens_lower, sens_upper, sens_mean, sens_std = self.bootstrap_sensitivity(y_true, y_pred)
@@ -2829,7 +2888,6 @@ class ModelTrainer:
         # pos_lh = class_likelihood_ratios(y_true, y_pred)[0]
         f1 = f1_score(y_true, y_pred)
 
-        
         fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
         specificity = 1 - fpr
         youden_index = tpr + specificity - 1
@@ -2842,15 +2900,15 @@ class ModelTrainer:
 
         youden = best_j
 
-        print("AUROC:", round(auroc, 3), 
-                "\nF1:", round(f1, 3),
-                "\nBalanced Accuracy:", round(bal_acc, 3),
-                "\nAverage Precision", round(ap, 3),
-                "\nBootstrap AUC:", round(sample_statistic, 3),
-                "\nBootstrap F1:", round(f1_sample_statistic, 3),
-                "\nBootstrap Sensitifity", round(sens_sample_statistic, 3),
-                "\nBootstrap Specificity", round(sp_sample_statistic, 3),
-                "\nYouden Index:", str(round(youden, 2)))
+        print("AUROC:", round(auroc, 3),
+              "\nF1:", round(f1, 3),
+              "\nBalanced Accuracy:", round(bal_acc, 3),
+              "\nAverage Precision", round(ap, 3),
+              "\nBootstrap AUC:", round(sample_statistic, 3),
+              "\nBootstrap F1:", round(f1_sample_statistic, 3),
+              "\nBootstrap Sensitifity", round(sens_sample_statistic, 3),
+              "\nBootstrap Specificity", round(sp_sample_statistic, 3),
+              "\nYouden Index:", str(round(youden, 2)))
 
         if youden != 0:
             corr_y_pred = []
@@ -2870,8 +2928,10 @@ class ModelTrainer:
             elif self.task == "multi_class_classification":
                 auroc_ = roc_auc_score(y_true, y_pred, multi_class='ovr')
             else:
-                self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                self.error.error(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                raise ValueError(
+                    "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
 
             bal_acc_ = balanced_accuracy_score(y_true, y_pred)  # , adjusted=True)
 
@@ -2882,7 +2942,7 @@ class ModelTrainer:
             f1_ = f1_score(y_true, y_pred)
 
             print("After Youden Correction:")
-            print("AUROC:", round(auroc_, 3), 
+            print("AUROC:", round(auroc_, 3),
                   "\nF1:", round(f1_, 3),
                   "\nBalanced Accuracy:", round(bal_acc_, 3),
                   "\nAverage Precision", round(ap_, 3),
@@ -2978,21 +3038,21 @@ class ModelTrainer:
 
         if self.task == "binary_classification":
             sample_statistic, lower, upper, mean, std = self.bootstrap_statistic(
-            roc_auc_score,
-            y_true,
-            y_pred,
-            "auroc"
+                roc_auc_score,
+                y_true,
+                y_pred,
+                "auroc"
             )
 
         elif self.task == "multi_class_classification":
             sample_statistic, lower, upper, mean, std = self.bootstrap_statistic(
-            statistic=roc_auc_score,
-            x=y_true,
-            y=y_pred,
-            metric="auroc",
-            kwargs={'multi_class':'ovr'}
+                statistic=roc_auc_score,
+                x=y_true,
+                y=y_pred,
+                metric="auroc",
+                kwargs={'multi_class': 'ovr'}
             )
-        
+
         return sample_statistic, lower, upper, mean, std
 
     def bootstrap_specificity(self, y_true, y_pred):
@@ -3055,7 +3115,7 @@ class ModelTrainer:
         """
         stats = []
         random_state = 0
-        #pbar = tqdm(total = num_folds,  desc="Bootstrapping")
+        # pbar = tqdm(total = num_folds,  desc="Bootstrapping")
 
         while len(stats) < num_folds:
             boot_x, boot_y = resample(
@@ -3077,9 +3137,9 @@ class ModelTrainer:
 
             if stat is not None:
                 stats.append(stat)
-                #pbar.update(1)
+                # pbar.update(1)
 
-        #pbar.close()
+        # pbar.close()
         stats_arr = np.array(stats)
 
         if kwargs is None:
@@ -3094,7 +3154,8 @@ class ModelTrainer:
 
         return sample_statistic, lower_bound, upper_bound, mean_boot, std_boot
 
-    def cv_AUC_generator(self, cv_models_trained=None, X_vals=None, y_vals=None, model_name=None, plotter=None, youden_annotation = False, val_preds=None, save_plot=True):
+    def cv_AUC_generator(self, cv_models_trained=None, X_vals=None, y_vals=None, model_name=None, plotter=None,
+                         youden_annotation=False, val_preds=None, save_plot=True):
         """
         Generating the AUC plot for cross validation models
         :param cv_models_trained: list of all models trained on every fold
@@ -3116,7 +3177,7 @@ class ModelTrainer:
 
         mean_fpr = np.linspace(0, 1, 100)
 
-        fig, ax = plt.subplots(figsize=(10,10))
+        fig, ax = plt.subplots(figsize=(10, 10))
 
         fold = 0
 
@@ -3157,8 +3218,7 @@ class ModelTrainer:
         else:
             # use performed predictions 
             for y_val, y_pred in zip(y_vals, y_preds):
-
-                # plot fold roc 
+                # plot fold roc
                 viz = plotter.plot_cv_AUC(y=y_val, y_pred=y_pred[:, 1], fold=fold, ax=ax)
 
                 interp_tpr = np.interp(mean_fpr, viz.fpr, viz.tpr)
@@ -3191,7 +3251,8 @@ class ModelTrainer:
 
         if youden_annotation:
             # Youden point and red dashed lines
-            ax.scatter(mean_best_fpr, mean_best_tpr, color='red', zorder=5, label=f'Best Youden J = {mean_best_j:.3f}\nThreshold = {mean_best_threshold:.2f}')
+            ax.scatter(mean_best_fpr, mean_best_tpr, color='red', zorder=5,
+                       label=f'Best Youden J = {mean_best_j:.3f}\nThreshold = {mean_best_threshold:.2f}')
             ax.axvline(mean_best_fpr, color='red', linestyle='--')
             ax.axhline(mean_best_tpr, color='red', linestyle='--')
 
@@ -3225,35 +3286,36 @@ class ModelTrainer:
 
         simple_model_name = self.get_simple_model_name(model_name)
 
-        if simple_model_name != "": # Single model
+        if simple_model_name != "":  # Single model
             ax.set(
                 xlim=[-0.05, 1.05],
                 ylim=[-0.05, 1.05],
-                xlabel='False Positive Rate', 
+                xlabel='False Positive Rate',
                 ylabel='True Positive Rate',
                 # title=simple_model_name + "\nReceiver operating characteristic curve",
             )
             title_text = simple_model_name + "\nReceiver operating characteristic curve"
             ax.set_title(title_text, fontsize=22)
-        else: # Ensemble
+        else:  # Ensemble
             if self.ensemble:
                 ax.set(
                     xlim=[-0.05, 1.05],
                     ylim=[-0.05, 1.05],
-                    xlabel='False Positive Rate', 
+                    xlabel='False Positive Rate',
                     ylabel='True Positive Rate',
                     # title="Ensemble " + str(type(cv_models_trained[0]).__name__) + "\nReceiver operating characteristic curve",
-                    )
-                title_text = "Ensemble " + str(type(cv_models_trained[0]).__name__) + "\nReceiver operating characteristic curve"
+                )
+                title_text = "Ensemble " + str(
+                    type(cv_models_trained[0]).__name__) + "\nReceiver operating characteristic curve"
                 ax.set_title(title_text, fontsize=22)
             else:
                 ax.set(
                     xlim=[-0.05, 1.05],
                     ylim=[-0.05, 1.05],
-                    xlabel='False Positive Rate', 
+                    xlabel='False Positive Rate',
                     ylabel='True Positive Rate',
                     # title=str(type(cv_models_trained[0]).__name__) + "\nReceiver operating characteristic curve",
-                    )
+                )
                 title_text = str(type(cv_models_trained[0]).__name__) + "\nReceiver operating characteristic curve"
                 ax.set_title(title_text, fontsize=22)
 
@@ -3269,11 +3331,10 @@ class ModelTrainer:
 
         if not os.path.exists(self.plot_save_dir + "/AUC"):
             os.makedirs(self.plot_save_dir + "/AUC", exist_ok=True)
-        
-        
+
         if simple_model_name != "":
             if not os.path.exists(self.plot_save_dir + "/AUC/" + simple_model_name + "/"):
-                    os.makedirs(self.plot_save_dir + "/AUC/" + simple_model_name + "/", exist_ok=True)
+                os.makedirs(self.plot_save_dir + "/AUC/" + simple_model_name + "/", exist_ok=True)
         else:
             if not os.path.exists(self.plot_save_dir + "/AUC/" + model_name):
                 os.makedirs(self.plot_save_dir + "/AUC/" + model_name, exist_ok=True)
@@ -3451,8 +3512,6 @@ class ModelTrainer:
                                     # Train
                                     model = model.fit(X_train, y_train)
 
-
-
                             if self.shap_analysis:
                                 self.plotter.plot_shap(model=model, X=X_train, y=y_train,
                                                        output_path=self.shap_plot_save_dir + "/" + "optimized_" + model_name + "_fold_" + str(
@@ -3461,24 +3520,24 @@ class ModelTrainer:
                     else:
                         ### No optimization only CV Training ###
                         if not hasattr(model, "classes_"):
-                                if "TabNet" in type(model).__name__:
-                                    # Train
-                                    model.fit(X_train=X_train.values,
-                                              y_train=y_train.values,
-                                              eval_metric=['auc'],
-                                              max_epochs=self.optimization_iter,
-                                              patience=10,
-                                              batch_size=32,
-                                              virtual_batch_size=32,
-                                              num_workers=self.n_cpus,
-                                              weights=1,
-                                              drop_last=True
-                                              )
+                            if "TabNet" in type(model).__name__:
+                                # Train
+                                model.fit(X_train=X_train.values,
+                                          y_train=y_train.values,
+                                          eval_metric=['auc'],
+                                          max_epochs=self.optimization_iter,
+                                          patience=10,
+                                          batch_size=32,
+                                          virtual_batch_size=32,
+                                          num_workers=self.n_cpus,
+                                          weights=1,
+                                          drop_last=True
+                                          )
 
-                                else:
-                                    # Train
-                                    model = model.fit(X_train, y_train)
-                                    
+                            else:
+                                # Train
+                                model = model.fit(X_train, y_train)
+
                         if len(self.X_val) == 0:
                             self.eval_model(model=model,
                                             X_test=self.X_test,
@@ -3505,7 +3564,7 @@ class ModelTrainer:
             else:
                 # Load
                 model = self.load_model(filename)
-                
+
                 if not hasattr(model, "classes_"):
                     if "TabNet" in type(model).__name__:
                         model.fit(X_train=X_train.values,
@@ -3556,13 +3615,16 @@ class ModelTrainer:
                             test_auc_cv.append(roc_auc_score(self.y_test, y_pred_prob_test, multi_class='ovr'))
 
                         else:
-                            self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                            raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                    
+                            self.error.error(
+                                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                            raise ValueError(
+                                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+
                     if self.shap_analysis:
                         self.plotter.plot_shap(model=model, X=X_train, y=y_train,
-                                                output_path=self.shap_plot_save_dir + "/" + "optimized_" + model_name + "_fold_" + str(fold), 
-                                                seed=self.rand_state)    
+                                               output_path=self.shap_plot_save_dir + "/" + "optimized_" + model_name + "_fold_" + str(
+                                                   fold),
+                                               seed=self.rand_state)
             if not model is None:
                 if not hasattr(model, "classes_"):
                     if "TabNet" in type(model).__name__:
@@ -3580,7 +3642,6 @@ class ModelTrainer:
                     else:
                         model = model.fit(X_train, y_train)
 
-                
                 # get ensemble per model for all cv folds
                 cv_models.append(model)
                 X_vals.append(X_val)
@@ -3597,7 +3658,7 @@ class ModelTrainer:
                             y_pred = model.predict(X_val.values)
                 else:
                     y_pred = model.predict(X_val)
-                
+
                 simple_model_name = self.get_simple_model_name(model_name)
 
                 if simple_model_name != "":
@@ -3605,25 +3666,25 @@ class ModelTrainer:
                         os.makedirs(self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "/")
 
                     plotter.plot_conv_matrix(title=str(type(model).__name__) + "_on_validation_fold",
-                                            y=y_val,
-                                            y_pred=y_pred,
-                                            label=model.classes_,
-                                            path=self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "/",
-                                            fold=fold)
+                                             y=y_val,
+                                             y_pred=y_pred,
+                                             label=model.classes_,
+                                             path=self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "/",
+                                             fold=fold)
 
                 else:
                     plotter.plot_conv_matrix(title=str(type(model).__name__) + "_on_validation_fold",
-                                            y=y_val,
-                                            y_pred=y_pred,
-                                            label=model.classes_,
-                                            path=self.plot_save_dir + "/confusion_matrix/CV/" + model_name + "/",
-                                            fold=fold)
+                                             y=y_val,
+                                             y_pred=y_pred,
+                                             label=model.classes_,
+                                             path=self.plot_save_dir + "/confusion_matrix/CV/" + model_name + "/",
+                                             fold=fold)
 
                 if model_name not in cv_models_for_ensemble:
                     cv_models_for_ensemble[model_name] = [model]
                 else:
                     cv_models_for_ensemble[model_name].append(model)
-           
+
             cv_models_paths.append(filename)
             fold += 1
 
@@ -3649,30 +3710,30 @@ class ModelTrainer:
             self.model_name = model_name
 
             if not os.path.exists(self.out_folder + "/plots/overfitting_plot/"):
-                    os.makedirs(self.out_folder + "/plots/overfitting_plot/")
+                os.makedirs(self.out_folder + "/plots/overfitting_plot/")
 
             self.plotter.plot_overfitting_plot(train_auc_cv=train_auc_cv,
                                                val_auc_cv=val_auc_cv,
                                                test_auc_cv=test_auc_cv,
                                                model_name=model_name,
                                                output_path=self.out_folder + "/plots/overfitting_plot/")
-            
-        print(3*"#", "Ensembling " + model_name + " CV training", 3*"#")
+
+        print(3 * "#", "Ensembling " + model_name + " CV training", 3 * "#")
         self.logger.info("### " + "Ensembling " + model_name + " CV training" + " ###")
 
         ### Perform ensembling on CV models ###
         if self.optimize:
             ensemble_soft, ensemble_hard, ensembled_model_names = self.ensembling(list_of_models=cv_models,
-                                                            model_name=model_name + "_cv_optimized",
-                                                            out_folder=self.model_save_dir + "/CV/optimized/" + model_name + "/",
-                                                            fit_estimators=False,
-                                                            get_ensambled_model_names=True)
+                                                                                  model_name=model_name + "_cv_optimized",
+                                                                                  out_folder=self.model_save_dir + "/CV/optimized/" + model_name + "/",
+                                                                                  fit_estimators=False,
+                                                                                  get_ensambled_model_names=True)
         else:
             ensemble_soft, ensemble_hard, ensembled_model_names = self.ensembling(list_of_models=cv_models,
-                                                           model_name=model_name + "_cv_trained",
-                                                           out_folder=self.model_save_dir + "/CV/trained/" + model_name + "/",
-                                                           fit_estimators=False,
-                                                           get_ensambled_model_names=True)
+                                                                                  model_name=model_name + "_cv_trained",
+                                                                                  out_folder=self.model_save_dir + "/CV/trained/" + model_name + "/",
+                                                                                  fit_estimators=False,
+                                                                                  get_ensambled_model_names=True)
 
         return cv_models, cv_models_for_ensemble
 
@@ -3684,10 +3745,10 @@ class ModelTrainer:
         """
         if self.use_wandb:
             run = wandb.init(
-                                project=self.wandb_project_name,
-                                tags=["RPTK"],
-                                name="Cross_validation_" + model_name
-                            )
+                project=self.wandb_project_name,
+                tags=["RPTK"],
+                name="Cross_validation_" + model_name
+            )
 
         ensemble_models = []
         cv_models = []
@@ -3796,22 +3857,21 @@ class ModelTrainer:
                                                     # fit_params={"scoring":self.scoring},
                                                     groups=self.X_train.copy().index,
                                                     method="predict")
-                
 
                 simple_model_name = self.get_simple_model_name(model_name)
 
                 if simple_model_name != "":
                     plotter.plot_conv_matrix(title=str(type(model).__name__) + "_on_train_prediction",
-                                            y=self.y_train,
-                                            y_pred=y_pred_full,
-                                            label=model.classes_,
-                                            path=self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "/")
+                                             y=self.y_train,
+                                             y_pred=y_pred_full,
+                                             label=model.classes_,
+                                             path=self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "/")
                 else:
                     plotter.plot_conv_matrix(title=str(type(model).__name__) + "_on_train_prediction",
-                                            y=self.y_train,
-                                            y_pred=y_pred_full,
-                                            label=model.classes_,
-                                            path=self.plot_save_dir + "/confusion_matrix/CV/" + model_name + "/")
+                                             y=self.y_train,
+                                             y_pred=y_pred_full,
+                                             label=model.classes_,
+                                             path=self.plot_save_dir + "/confusion_matrix/CV/" + model_name + "/")
 
                 if not os.path.exists(self.plot_save_dir + "/confusion_matrix/CV/"):
                     os.makedirs(self.plot_save_dir + "/confusion_matrix/CV/")
@@ -3952,9 +4012,10 @@ class ModelTrainer:
         elif self.task == "multi_class_classification":
             auc = roc_auc_score(self.y_val, y_pred, multi_class='ovr')
         else:
-            self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-            raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-        
+            self.error.error(
+                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+            raise ValueError(
+                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
 
         print("AUROC: %0.2f [%s]" % (auc, label))
         self.logger.info("AUROC: %0.2f [%s]" % (auc, label))
@@ -4253,14 +4314,13 @@ class ModelTrainer:
             else:
                 model_names = [type(self.model).__name__]
 
-            
             for model_n in model_names:
                 if model_n in model_name:
                     simple_model_name = model_n
                     break
         else:
             simple_model_name = "Best_Ensemble_Combination"
-        
+
         return simple_model_name
 
     def eval_model(self, model=None, X_test=None, y_test=None, X_val=None, y_val=None, model_name=None, val_pred=None):
@@ -4287,7 +4347,8 @@ class ModelTrainer:
         if "Ensemble" in type(model).__name__:
             if len(model.clfs) > 0:
                 if "Ensemble" in type(model.clfs[0]).__name__:
-                    print("ENSEMBLING",type(model).__name__,  type(model.clfs[0]).__name__, type(model.clfs[0].clfs[0]).__name__)
+                    print("ENSEMBLING", type(model).__name__, type(model.clfs[0]).__name__,
+                          type(model.clfs[0].clfs[0]).__name__)
                 if self.check_tabnet_in_ensemble(model):
                     y_pred = model.predict(X_test.values)
                     y_predict_proba = model.predict_proba(X_test.values)[:, 1]
@@ -4299,17 +4360,19 @@ class ModelTrainer:
                 self.error.warning("No models in Ensemble.")
                 print("No models in Ensemble.")
                 return None
-            
+
             ensemble_model_name = PerformancePlotter.extract_ensemble_model_name(ensemble_string=model_name)
 
             if not ensemble_model_name is None:
-                ensemble_model_name_short = ensemble_model_name.replace("SoftEnsemble_","")
+                ensemble_model_name_short = ensemble_model_name.replace("SoftEnsemble_", "")
 
                 # get all fold val AUC from the model of interest:
-                models = self.prediction_summary.copy().loc[self.prediction_summary["Models"].str.contains(ensemble_model_name_short), :]
-                val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models = PerformancePlotter.get_AUC_values_per_models(df=models)
+                models = self.prediction_summary.copy().loc[
+                         self.prediction_summary["Models"].str.contains(ensemble_model_name_short), :]
+                val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models = PerformancePlotter.get_AUC_values_per_models(
+                    df=models)
                 # TODO val_auc_fold_models as dict calculate the mean and give it to the parameter val_pred
-                
+
 
         elif "TabNet" in type(model).__name__:
             y_pred = model.predict(X_test.values)
@@ -4333,23 +4396,25 @@ class ModelTrainer:
         elif self.task == "multi_class_classification":
             auroc = roc_auc_score(y_test, y_predict_proba, multi_class='ovr')
         else:
-            self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-            raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-        
+            self.error.error(
+                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+            raise ValueError(
+                "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+
         true_labels = y_test.to_list()
         sample_ids = X_test.index.to_list()
         if X_val is not None:
             true_labels_val = y_val.to_list()
             sample_ids_val = X_val.index.to_list()
 
-        sample_prediction_summary = pd.DataFrame.from_dict({"ID":sample_ids,
-                                                            "Label":true_labels,
+        sample_prediction_summary = pd.DataFrame.from_dict({"ID": sample_ids,
+                                                            "Label": true_labels,
                                                             "Prediction": y_pred,
                                                             "Prediction_Proba": y_predict_proba,
                                                             })
         if X_val is not None:
-            sample_val_prediction_summary = pd.DataFrame.from_dict({"ID":sample_ids_val,
-                                                                    "Label":true_labels_val,
+            sample_val_prediction_summary = pd.DataFrame.from_dict({"ID": sample_ids_val,
+                                                                    "Label": true_labels_val,
                                                                     "Prediction": y_pred_val,
                                                                     "Prediction_Proba": y_predict_proba_val,
                                                                     })
@@ -4359,25 +4424,24 @@ class ModelTrainer:
             os.makedirs(self.out_folder + "/plots/prediction_prob/")
 
         simple_model_name = self.get_simple_model_name(model_name)
-        
+
         if simple_model_name != "":
             if not os.path.exists(self.out_folder + "/plots/prediction_prob/" + simple_model_name + "/"):
                 os.makedirs(self.out_folder + "/plots/prediction_prob/" + simple_model_name + "/")
 
-            PerformancePlotter.plot_probability_distribution(df=sample_prediction_summary, 
-                                                            label_column="Label", 
-                                                            proba_column="Prediction_Proba", 
-                                                            save_path=self.out_folder + "/plots/prediction_prob/" + simple_model_name + "/", 
-                                                            model_name=model_name)
+            PerformancePlotter.plot_probability_distribution(df=sample_prediction_summary,
+                                                             label_column="Label",
+                                                             proba_column="Prediction_Proba",
+                                                             save_path=self.out_folder + "/plots/prediction_prob/" + simple_model_name + "/",
+                                                             model_name=model_name)
 
         else:
 
-            PerformancePlotter.plot_probability_distribution(df=sample_prediction_summary, 
-                                                            label_column="Label", 
-                                                            proba_column="Prediction_Proba", 
-                                                            save_path=self.out_folder + "/plots/prediction_prob/", 
-                                                            model_name=model_name)
-
+            PerformancePlotter.plot_probability_distribution(df=sample_prediction_summary,
+                                                             label_column="Label",
+                                                             proba_column="Prediction_Proba",
+                                                             save_path=self.out_folder + "/plots/prediction_prob/",
+                                                             model_name=model_name)
 
         if not os.path.exists(self.out_folder + "/prediction_prob/"):
             os.makedirs(self.out_folder + "/prediction_prob/")
@@ -4388,29 +4452,40 @@ class ModelTrainer:
 
             if "on_fold_val" in str(model_name):
                 if X_val is not None:
-                    sample_val_prediction_summary.to_csv(self.out_folder + "/prediction_prob/" + simple_model_name + "/prediction_prob_" + str(model_name) + ".csv")
-                
+                    sample_val_prediction_summary.to_csv(
+                        self.out_folder + "/prediction_prob/" + simple_model_name + "/prediction_prob_" + str(
+                            model_name) + ".csv")
+
                 test_model_name = model_name
-                test_model_name = test_model_name.replace("on_fold_val","fold_test")
-                sample_prediction_summary.to_csv(self.out_folder + "/prediction_prob/" + simple_model_name + "/prediction_prob_" + str(test_model_name) + ".csv")
+                test_model_name = test_model_name.replace("on_fold_val", "fold_test")
+                sample_prediction_summary.to_csv(
+                    self.out_folder + "/prediction_prob/" + simple_model_name + "/prediction_prob_" + str(
+                        test_model_name) + ".csv")
             else:
                 if X_val is not None:
-                    sample_val_prediction_summary.to_csv(self.out_folder + "/prediction_prob/prediction_prob_" + str(model_name) + "_on_val.csv")
-                
-                sample_prediction_summary.to_csv(self.out_folder + "/prediction_prob/" + simple_model_name + "/prediction_prob_" + str(model_name) + ".csv")
+                    sample_val_prediction_summary.to_csv(
+                        self.out_folder + "/prediction_prob/prediction_prob_" + str(model_name) + "_on_val.csv")
+
+                sample_prediction_summary.to_csv(
+                    self.out_folder + "/prediction_prob/" + simple_model_name + "/prediction_prob_" + str(
+                        model_name) + ".csv")
         else:
             if "on_fold_val" in str(model_name):
                 if X_val is not None:
-                    sample_val_prediction_summary.to_csv(self.out_folder + "/prediction_prob/prediction_prob_" + str(model_name) + ".csv")
-                
+                    sample_val_prediction_summary.to_csv(
+                        self.out_folder + "/prediction_prob/prediction_prob_" + str(model_name) + ".csv")
+
                 test_model_name = model_name
-                test_model_name = test_model_name.replace("on_fold_val","fold_test")
-                sample_prediction_summary.to_csv(self.out_folder + "/prediction_prob/prediction_prob_" + str(test_model_name) + ".csv")
+                test_model_name = test_model_name.replace("on_fold_val", "fold_test")
+                sample_prediction_summary.to_csv(
+                    self.out_folder + "/prediction_prob/prediction_prob_" + str(test_model_name) + ".csv")
             else:
                 if X_val is not None:
-                    sample_val_prediction_summary.to_csv(self.out_folder + "/prediction_prob/prediction_prob_" + str(model_name) + "_on_val.csv")
-                
-                sample_prediction_summary.to_csv(self.out_folder + "/prediction_prob/prediction_prob_" + str(model_name) + ".csv")
+                    sample_val_prediction_summary.to_csv(
+                        self.out_folder + "/prediction_prob/prediction_prob_" + str(model_name) + "_on_val.csv")
+
+                sample_prediction_summary.to_csv(
+                    self.out_folder + "/prediction_prob/prediction_prob_" + str(model_name) + ".csv")
 
         # Balanced Accuracy
         bal_acc = balanced_accuracy_score(y_test, y_pred)  # , adjusted=True)
@@ -4448,9 +4523,11 @@ class ModelTrainer:
                 elif self.task == "multi_class_classification":
                     val_auroc = roc_auc_score(y_val, val_y_predict_proba, multi_class='ovr')
                 else:
-                    self.error.error("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                    raise ValueError("Unknown Task! Please specify binary_classification, multi_class_classification or regression")
-                
+                    self.error.error(
+                        "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+                    raise ValueError(
+                        "Unknown Task! Please specify binary_classification, multi_class_classification or regression")
+
                 # Balanced Accuracy
                 val_bal_acc = balanced_accuracy_score(y_val, val_y_pred)  # , adjusted=True)
 
@@ -4499,59 +4576,62 @@ class ModelTrainer:
                                                            "Bootstrap_F1_upper": [f1_upper],
                                                            "Bootstrap_F1_lower": [f1_lower],
                                                            })
-        self.logger.info("Model: " + model_name + " Test AUC: " + str(auroc) + " Test F1: " + str(f1) + " Test AP: " + str(ap))
+        self.logger.info(
+            "Model: " + model_name + " Test AUC: " + str(auroc) + " Test F1: " + str(f1) + " Test AP: " + str(ap))
         print("Model: " + model_name + " Test AUC: " + str(auroc) + " Test F1: " + str(f1) + " Test AP: " + str(ap))
-        
+
         simple_model_name = self.get_simple_model_name(model_name)
 
         if simple_model_name != "":
-            if not os.path.exists(self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "_test_set_performance/"):
-                os.makedirs(self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "_test_set_performance/",exist_ok=True)
+            if not os.path.exists(
+                self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "_test_set_performance/"):
+                os.makedirs(self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "_test_set_performance/",
+                            exist_ok=True)
 
-            if not os.path.exists(self.plot_save_dir + "/confusion_matrix/" + simple_model_name + "_test_set_performance/"):
-                os.makedirs(self.plot_save_dir + "/confusion_matrix/" + simple_model_name + "_test_set_performance/",exist_ok=True)
-
+            if not os.path.exists(
+                self.plot_save_dir + "/confusion_matrix/" + simple_model_name + "_test_set_performance/"):
+                os.makedirs(self.plot_save_dir + "/confusion_matrix/" + simple_model_name + "_test_set_performance/",
+                            exist_ok=True)
 
         if simple_model_name != "":
             if "fold" in model_name:
                 self.plotter.plot_conv_matrix(title=model_name + "_on_test_set",
-                                            y=y_test,
-                                            y_pred=y_pred,
-                                            label=model.classes_,
-                                            path=self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "_test_set_performance/")
+                                              y=y_test,
+                                              y_pred=y_pred,
+                                              label=model.classes_,
+                                              path=self.plot_save_dir + "/confusion_matrix/CV/" + simple_model_name + "_test_set_performance/")
             else:
                 self.plotter.plot_conv_matrix(title=model_name + "_on_test_set",
-                                            y=y_test,
-                                            y_pred=y_pred,
-                                            label=model.classes_,
-                                            path=self.plot_save_dir + "/confusion_matrix/" + simple_model_name + "_test_set_performance/")
+                                              y=y_test,
+                                              y_pred=y_pred,
+                                              label=model.classes_,
+                                              path=self.plot_save_dir + "/confusion_matrix/" + simple_model_name + "_test_set_performance/")
 
         else:
             if "fold" in model_name:
                 self.plotter.plot_conv_matrix(title=model_name + "_on_test_set",
-                                            y=y_test,
-                                            y_pred=y_pred,
-                                            label=model.classes_,
-                                            path=self.plot_save_dir + "/confusion_matrix/CV/" + model_name + "_test_set_performance/")
+                                              y=y_test,
+                                              y_pred=y_pred,
+                                              label=model.classes_,
+                                              path=self.plot_save_dir + "/confusion_matrix/CV/" + model_name + "_test_set_performance/")
             else:
                 self.plotter.plot_conv_matrix(title=model_name + "_on_test_set",
-                                            y=y_test,
-                                            y_pred=y_pred,
-                                            label=model.classes_,
-                                            path=self.plot_save_dir + "/confusion_matrix/" + model_name + "_test_set_performance/")
+                                              y=y_test,
+                                              y_pred=y_pred,
+                                              label=model.classes_,
+                                              path=self.plot_save_dir + "/confusion_matrix/" + model_name + "_test_set_performance/")
 
-        
         simple_model_name = self.get_simple_model_name(model_name)
-        
+
         if simple_model_name != "":
             if not os.path.exists(self.plot_save_dir + "/AUC/" + simple_model_name + "/"):
-                    os.makedirs(self.plot_save_dir + "/AUC/" + simple_model_name + "/",exist_ok=True)
+                os.makedirs(self.plot_save_dir + "/AUC/" + simple_model_name + "/", exist_ok=True)
 
             self.plotter.plot_AUC(model=model, X_test=X_test, y_test=y_test, model_name=model_name,
-                                out_path=self.plot_save_dir + "/AUC/" + simple_model_name)
+                                  out_path=self.plot_save_dir + "/AUC/" + simple_model_name)
         else:
             self.plotter.plot_AUC(model=model, X_test=X_test, y_test=y_test, model_name=model_name,
-                                out_path=self.plot_save_dir + "/AUC/" + model_name)
+                                  out_path=self.plot_save_dir + "/AUC/" + model_name)
 
         self.model_parameter = pd.concat([self.model_parameter, model_parameter_entry])
         self.model_parameter = self.model_parameter.drop_duplicates(subset=["Models", "Test_AUC", "Val_AUC"])
@@ -4589,10 +4669,11 @@ class ModelTrainer:
 
         y_stable = 0.0
         os.makedirs(self.model_save_dir + "/pretrained_models", exist_ok=True)
-        model_filename = self.model_save_dir + "/pretrained_models/" + self.RunID + "_stable_pretrained_" + type(model).__name__ + '.sav'
-        
+        model_filename = self.model_save_dir + "/pretrained_models/" + self.RunID + "_stable_pretrained_" + type(
+            model).__name__ + '.sav'
+
         if not os.path.exists(model_filename):
-            
+
             self.logger.info("Performing pretraining " + str(type(model).__name__))
 
             param_name, param_range = self.get_stable_parameter_range(model)
@@ -4749,7 +4830,7 @@ class ModelTrainer:
 
         return ensemble_soft, ensemble_hard
 
-    def ensembling(self, list_of_models, model_name, out_folder, fit_estimators, get_ensambled_model_names = False):
+    def ensembling(self, list_of_models, model_name, out_folder, fit_estimators, get_ensambled_model_names=False):
         """
         Perform Ensembling of models in a list. Models can be fitted already.
         :param list_of_models: list of models to ensemble
@@ -4785,7 +4866,7 @@ class ModelTrainer:
             print(
                 "Ensembling of different models need to apply carefully based on different configuration. Ensembling: " + str(
                     set(model_names_in_list)))
-            
+
         else:
             ensemble_model_name = str(list(set(model_names_in_list))[0])
 
@@ -4828,15 +4909,15 @@ class ModelTrainer:
 
             os.makedirs(ensemble_soft_out_folder, exist_ok=True)
             os.makedirs(ensemble_hard_out_folder, exist_ok=True)
-            
+
             self.save_model(model=ensemble_soft, file_path=ensemble_soft_filename)
             self.save_model(model=ensemble_hard, file_path=ensemble_hard_filename)
-            
+
         if get_ensambled_model_names:
-             return ensemble_soft, ensemble_hard, ensemble_model_name
+            return ensemble_soft, ensemble_hard, ensemble_model_name
         else:
             return ensemble_soft, ensemble_hard
-    
+
     @staticmethod
     def polish_model_name(name):
         """
@@ -4869,7 +4950,7 @@ class ModelTrainer:
         top_models = [model[0] for model in sorted_models[:top_n]]
 
         return top_models
-    
+
     def get_ensemble_model_paths(self, selected_models):
         """
         Generates paths for the selected top models.
@@ -4885,7 +4966,7 @@ class ModelTrainer:
             base_path = self.out_folder + "/"
         else:
             base_path = self.out_folder
-        
+
         model_paths = {}
         for model in selected_models:
             path = base_path + f"models/CV/optimized/{model}*/SoftEnsemble_{model}*_cv_optimized_{model}/"
@@ -4900,7 +4981,7 @@ class ModelTrainer:
                 continue
                 # raise ValueError(f"No ensembling model found for {model} in {path}.")
 
-            for filename in filenames:    
+            for filename in filenames:
                 model_paths[model] = filename
 
         return model_paths
@@ -4935,7 +5016,7 @@ class ModelTrainer:
 
             if model_name not in model_feature_importances:
                 model_feature_importances[model_name] = []
-            
+
             model_feature_importances[model_name].append(df.set_index(feature_col)[importance_col])
 
             # Save feature importance plot for this fold
@@ -4945,14 +5026,15 @@ class ModelTrainer:
             plt.ylabel("Features")
             plt.title(f"{model_name} - Feature Importance (Fold {fold_number})", fontsize=12)
             plt.tight_layout()  # Ensure layout fits
-            plt.savefig(os.path.join(output_folder, f"{model_name}_fold_{fold_number}_importance.png"), bbox_inches='tight')
+            plt.savefig(os.path.join(output_folder, f"{model_name}_fold_{fold_number}_importance.png"),
+                        bbox_inches='tight')
             plt.close()
 
         # Save mean feature importance for each model
         for model_name, importance_list in model_feature_importances.items():
             importance_df = pd.concat(importance_list, axis=1).fillna(0)
             mean_importance = importance_df.mean(axis=1).sort_values(ascending=False)
-            
+
             plt.figure(figsize=(12, max(6, len(mean_importance) / 5)))  # Increase width for long titles
             mean_importance.sort_values(ascending=True).plot(kind='barh')
             plt.xlabel("Mean Feature Importance Score")
@@ -5009,8 +5091,8 @@ class ModelTrainer:
                 self.error.warning(f"Significant class imbalance detected!")
 
             self.X = self.data.loc[:, self.data.columns != self.Prediction_Label]
-            
-            self.X = self.X.loc[:,~self.X.columns.duplicated()]
+
+            self.X = self.X.loc[:, ~self.X.columns.duplicated()]
 
             self.feature_format_check()
 
@@ -5022,8 +5104,8 @@ class ModelTrainer:
 
             self.X_test = self.X
             self.y_test = self.y
-            
-             # Load trained model from model_path
+
+            # Load trained model from model_path
             self.generate_model_instance()
 
             self.verify_task()
@@ -5032,26 +5114,26 @@ class ModelTrainer:
 
             # predict only with trained model
             self.plotter = PerformancePlotter(output_path=self.plot_save_dir,
-                                            X=self.X_test,
-                                            y=self.y_test,
-                                            RunID=self.RunID,
-                                            error=self.error,
-                                            logger=self.logger)
+                                              X=self.X_test,
+                                              y=self.y_test,
+                                              RunID=self.RunID,
+                                              error=self.error,
+                                              logger=self.logger)
 
             for model in self.model:
                 model_name = type(model).__name__
 
                 self.eval_model(model=model,
-                            X_test=self.X_test,
-                            y_test=self.y_test,
-                            X_val=None,
-                            y_val=None,
-                            model_name="predict_only_" + model_name)
-                        
+                                X_test=self.X_test,
+                                y_test=self.y_test,
+                                X_val=None,
+                                y_val=None,
+                                model_name="predict_only_" + model_name)
+
         else:
             # generate train test val sets
             self.split_data()
-            
+
             # save train and test data for feature differences between model trainings
             self.X_train_global = self.X_train
             self.X_test_global = self.X_test
@@ -5061,15 +5143,14 @@ class ModelTrainer:
             self.generate_model_instance()
 
             self.plotter = PerformancePlotter(output_path=self.plot_save_dir,
-                                            X=self.X_train,
-                                            y=self.y_train,
-                                            RunID=self.RunID,
-                                            error=self.error,
-                                            logger=self.logger)
+                                              X=self.X_train,
+                                              y=self.y_train,
+                                              RunID=self.RunID,
+                                              error=self.error,
+                                              logger=self.logger)
 
             if isinstance(self.model, list):
                 print("Training", len(self.model), "different models ... ")
-
 
             if self.plot_save_dir is None:
                 self.plot_save_dir = self.out_folder + "/plots"
@@ -5077,14 +5158,13 @@ class ModelTrainer:
                     "Model save directory not specified. Using default directory: {}".format(self.plot_save_dir))
 
                 if not os.path.exists(self.plot_save_dir):
-                    os.makedirs(self.plot_save_dir,exist_ok=True)
+                    os.makedirs(self.plot_save_dir, exist_ok=True)
 
             if self.shap_plot_save_dir is None:
                 self.shap_plot_save_dir = self.plot_save_dir + "/SHAP"
 
             if not os.path.exists(self.shap_plot_save_dir):
-                os.makedirs(self.shap_plot_save_dir,exist_ok=True)
-
+                os.makedirs(self.shap_plot_save_dir, exist_ok=True)
 
             # 3. Get the stable and efficient model size (n_estimators ...)
             if self.stable_pretraining:
@@ -5118,7 +5198,7 @@ class ModelTrainer:
                     print(3 * "#", "Training", label, 3 * "#")
                     if self.use_cross_validation:
                         trained_models[label] = self.train_cv(model=clf, model_name=label, plotter=self.plotter,
-                                                            optimize=self.optimize)
+                                                              optimize=self.optimize)
                     else:
                         trained_models[label] = self.train_model(clf=clf, label=label)
             else:
@@ -5127,17 +5207,16 @@ class ModelTrainer:
 
                 if self.use_cross_validation:
                     trained_models[model_name] = self.train_cv(model=self.model, model_name=model_name,
-                                                            plotter=self.plotter, optimize=self.optimize)
+                                                               plotter=self.plotter, optimize=self.optimize)
                 else:
                     trained_models[model_name] = self.train_model(clf=self.model, label=model_name)
 
-
-            val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models = PerformancePlotter.get_AUC_values_per_models(self.prediction_summary.copy(), number_of_folds=self.cross_val_splits)
-            val_auc_fold_models_mean = {model: [np.mean(values)] for model, values in val_auc_fold_models.items()} 
+            val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models = PerformancePlotter.get_AUC_values_per_models(
+                self.prediction_summary.copy(), number_of_folds=self.cross_val_splits)
+            val_auc_fold_models_mean = {model: [np.mean(values)] for model, values in val_auc_fold_models.items()}
 
             # Get Best Model
-            best_model = ModelTrainer.select_top_models(mean_auroc_dict=val_auc_fold_models_mean, top_n=1) 
-            
+            best_model = ModelTrainer.select_top_models(mean_auroc_dict=val_auc_fold_models_mean, top_n=1)
 
             best_model_path = self.get_ensemble_model_paths(selected_models=best_model)
             best_model_name = best_model[0]
@@ -5146,7 +5225,7 @@ class ModelTrainer:
             integrated_model_name = ""
             if "Ensemble" in type(model).__name__:
                 if integrated_model_name == "":
-                    integrated_model_name = type(model.clfs[0]).__name__ 
+                    integrated_model_name = type(model.clfs[0]).__name__
                 else:
                     integrated_model_name += "_" + type(model.clfs[0]).__name__
             else:
@@ -5157,7 +5236,8 @@ class ModelTrainer:
 
             if self.ensemble_best_models:
                 # Getting the top models based on the validation AUROC
-                top_models = ModelTrainer.select_top_models(mean_auroc_dict=val_auc_fold_models_mean, top_n=self.ensemble_best_n_models)      
+                top_models = ModelTrainer.select_top_models(mean_auroc_dict=val_auc_fold_models_mean,
+                                                            top_n=self.ensemble_best_n_models)
                 self.logger.info(f"Top models based on validation AUROC: {top_models}")
 
                 self.logger.info("Ensembling the top models ...")
@@ -5169,17 +5249,17 @@ class ModelTrainer:
                 models_4_ensemble = []
                 integrated_model_names = ""
                 for model_name in model_paths:
-                    
+
                     model = self.load_model(model_paths[model_name])
                     if "Ensemble" in type(model).__name__:
                         if integrated_model_names == "":
-                            integrated_model_names = type(model.clfs[0]).__name__ 
+                            integrated_model_names = type(model.clfs[0]).__name__
                         else:
                             integrated_model_names += "_" + type(model.clfs[0]).__name__
                     else:
                         integrated_model_names += type(model).__name__ + "_"
 
-                    print("Included model:",type(model).__name__)
+                    print("Included model:", type(model).__name__)
                     models_4_ensemble.append(model)
 
                 print("Ensembling the top models: ", models_4_ensemble)
@@ -5187,56 +5267,63 @@ class ModelTrainer:
                     print("Error in loading models for ensembling.")
 
                 # ensembling models
-                ensemble_soft, ensemble_hard = self.ensembling(list_of_models=models_4_ensemble, 
-                                                                model_name= "Best_Ensemble_" + integrated_model_names, 
-                                                                out_folder=self.model_save_dir + "/CV/optimized/best_ensemble/", 
-                                                                fit_estimators=False, 
-                                                                get_ensambled_model_names=False)
-                
-                self.eval_model(model=ensemble_soft, 
-                                X_test=self.X_test, 
-                                y_test=self.y_test, 
-                                X_val=None, 
-                                y_val=None, 
+                ensemble_soft, ensemble_hard = self.ensembling(list_of_models=models_4_ensemble,
+                                                               model_name="Best_Ensemble_" + integrated_model_names,
+                                                               out_folder=self.model_save_dir + "/CV/optimized/best_ensemble/",
+                                                               fit_estimators=False,
+                                                               get_ensambled_model_names=False)
+
+                self.eval_model(model=ensemble_soft,
+                                X_test=self.X_test,
+                                y_test=self.y_test,
+                                X_val=None,
+                                y_val=None,
                                 model_name="Best_Ensemble_" + integrated_model_names)
 
             # check all models and create final plots to evaluate
 
             # get all Ensembled approaches
-            enemble_df = self.prediction_summary.copy()[self.prediction_summary.copy()['Models'].str.contains("SoftEnsemble_", case=False, na=False)]
-            stable_df = self.prediction_summary.copy()[self.prediction_summary.copy()['Models'].str.contains("stable_", case=False, na=False)]
+            enemble_df = self.prediction_summary.copy()[
+                self.prediction_summary.copy()['Models'].str.contains("SoftEnsemble_", case=False, na=False)]
+            stable_df = self.prediction_summary.copy()[
+                self.prediction_summary.copy()['Models'].str.contains("stable_", case=False, na=False)]
 
             # Apply the function to all model names
-            enemble_df.loc[:,"Models"] = [ModelTrainer.polish_model_name(name=name) for name in enemble_df["Models"].to_list()]
+            enemble_df.loc[:, "Models"] = [ModelTrainer.polish_model_name(name=name) for name in
+                                           enemble_df["Models"].to_list()]
 
             # plot Performance distribution for all Ensembl models with Concidence interval
             PerformancePlotter.plot_model_auc_ci_vertical(df=enemble_df,
-                                                        filename=self.out_folder + "/plots/Ensemble_CI_dist_plot.png")
+                                                          filename=self.out_folder + "/plots/Ensemble_CI_dist_plot.png")
 
             PerformancePlotter.plot_model_auc_ci_vertical(df=stable_df,
-                                                        filename=self.out_folder + "/plots/Stable_CI_dist_plot.png")
+                                                          filename=self.out_folder + "/plots/Stable_CI_dist_plot.png")
 
-            val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models = PerformancePlotter.get_AUC_values_per_models(self.prediction_summary.copy(), number_of_folds=self.cross_val_splits)
-            best_model, best_AUC  = PerformancePlotter.plot_val_auc_distribution(val_auc_dict=val_auc_fold_models, save_path=self.out_folder + "/plots/CV_Val_AUC_distribution.png")
-            
-            print(f"Ensemble Test Performance of best model {best_model} with Val AUC: {round(best_AUC,3)}: {test_auc_ensemble_models[best_model]}")
-            self.logger.info(f"Ensemble Test Performance of best model {best_model} with Val AUC: {round(best_AUC,3)}: {test_auc_ensemble_models[best_model]}")        
-            
+            val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models = PerformancePlotter.get_AUC_values_per_models(
+                self.prediction_summary.copy(), number_of_folds=self.cross_val_splits)
+            best_model, best_AUC = PerformancePlotter.plot_val_auc_distribution(val_auc_dict=val_auc_fold_models,
+                                                                                save_path=self.out_folder + "/plots/CV_Val_AUC_distribution.png")
 
-        val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models = PerformancePlotter.get_AUC_values_per_models(self.prediction_summary.copy(), number_of_folds=self.cross_val_splits)
-        
-        PerformancePlotter.plot_summary_auroc(val_auc_fold_models=val_auc_fold_models, 
-                                              test_auc_fold_models=test_auc_fold_models, 
-                                              test_auc_ensemble_models=test_auc_ensemble_models, 
-                                              data=self.prediction_summary.copy(), 
+            print(
+                f"Ensemble Test Performance of best model {best_model} with Val AUC: {round(best_AUC, 3)}: {test_auc_ensemble_models[best_model]}")
+            self.logger.info(
+                f"Ensemble Test Performance of best model {best_model} with Val AUC: {round(best_AUC, 3)}: {test_auc_ensemble_models[best_model]}")
+
+        val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models = PerformancePlotter.get_AUC_values_per_models(
+            self.prediction_summary.copy(), number_of_folds=self.cross_val_splits)
+
+        PerformancePlotter.plot_summary_auroc(val_auc_fold_models=val_auc_fold_models,
+                                              test_auc_fold_models=test_auc_fold_models,
+                                              test_auc_ensemble_models=test_auc_ensemble_models,
+                                              data=self.prediction_summary.copy(),
                                               output_path=self.out_folder + "/plots/")
 
-        
-        subfolders = [ f.path for f in os.scandir(self.out_folder + "/feature_importance") if f.is_dir() ]
+        subfolders = [f.path for f in os.scandir(self.out_folder + "/feature_importance") if f.is_dir()]
         for folder in subfolders:
             model_folder_name = os.path.basename(folder)
             # Plot feature impotances
-            self.plot_feature_importances(folder_path=folder, output_folder=self.out_folder + "/plots/feature_importances/" + model_folder_name + "/")
+            self.plot_feature_importances(folder_path=folder,
+                                          output_folder=self.out_folder + "/plots/feature_importances/" + model_folder_name + "/")
 
         print("RPTK Prediction Done!")
         self.logger.info("#### RPTK Prediction Done! ####")

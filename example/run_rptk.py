@@ -10,7 +10,7 @@ import sys
 
 sys.path.append('path/to/rptk/repo/folder/')
 
-from rptk.rptk import RPTK
+from rptk import RPTK
 from pandas.api.types import is_object_dtype, is_numeric_dtype, is_bool_dtype
 import argparse
 

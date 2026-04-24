@@ -8,6 +8,8 @@ version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = []
 
+# RPTK runs as source directory, not as installed package
+# mirp and src are imported as top-level modules via sys.path
 [tool.setuptools]
-packages = ["rptk", "rptk.src", "rptk.mirp"]
-package-dir = { "rptk" = ".", "rptk.src" = "src", "rptk.mirp" = "mirp" }
+packages = ["rptk", "mirp", "src"]
+package-dir = {"rptk" = "."}

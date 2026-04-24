@@ -1,25 +1,10 @@
-import os
+import json
+from typing import List
 
-import tqdm
-
-import SimpleITK as sitk
-
-import numpy as np
 import pandas as pd
 
-from typing import Union, List
-
-from rptk.mirp.experimentClass import ExperimentClass
-from rptk.mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass,\
-    ImageInterpolationSettingsClass, RoiInterpolationSettingsClass, ResegmentationSettingsClass,\
-    ImagePerturbationSettingsClass, ImageTransformationSettingsClass, FeatureExtractionSettingsClass
-
-from rptk.mirp.imageRead import load_image
-from rptk.mirp import imageClass
-from rptk.mirp import *
-from radiomics import imageoperations
-
-import glob
+from mirp import importSettings
+from mirp.importSettings import ImageTransformationSettingsClass
 
 
 class Transformation_config:
@@ -29,12 +14,12 @@ class Transformation_config:
     """
 
     def __init__(self,
-                 rptk_config_json:str = None,
+                 rptk_config_json: str = None,
                  MIRP_transformations: List[str] = None,
                  Feature_extraction_settings: importSettings.FeatureExtractionSettingsClass = None,
                  response_map_discretisation_method: str = "fixed_bin_number",  # fixed_bin_size for bin with
                  response_map_discretisation_n_bins: int = 16,
-                 response_map_discretisation_bin_width: int =25,
+                 response_map_discretisation_bin_width: int = 25,
                  response_map_feature_settings: importSettings.FeatureExtractionSettingsClass = None,
                  response_map_feature_families: List[str] = None,
                  gabor_sigma: float = 3.0,
@@ -80,37 +65,55 @@ class Transformation_config:
             with open(self.rptk_config_json, 'r') as f:
                 self.config = json.load(f)
 
-            self.response_map_discretisation_method = self.config["Preprocessing_config"]["transformation_kernel_config"]["response_map_discretisation_method"]
-            self.response_map_discretisation_n_bins = self.config["Preprocessing_config"]["transformation_kernel_config"]["response_map_discretisation_n_bins"]
-            self.response_map_discretisation_bin_width = self.config["Preprocessing_config"]["transformation_kernel_config"]["response_map_discretisation_bin_width"]
-            self.gabor_sigma = self.config["Preprocessing_config"]["transformation_kernel_config"]["gabor"]["gabor_sigma"]
-            self.gabor_lambda = self.config["Preprocessing_config"]["transformation_kernel_config"]["gabor"]["gabor_lambda"]
-            self.laws_kernel = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"]["laws_kernel"]
+            self.response_map_discretisation_method = \
+            self.config["Preprocessing_config"]["transformation_kernel_config"]["response_map_discretisation_method"]
+            self.response_map_discretisation_n_bins = \
+            self.config["Preprocessing_config"]["transformation_kernel_config"]["response_map_discretisation_n_bins"]
+            self.response_map_discretisation_bin_width = \
+            self.config["Preprocessing_config"]["transformation_kernel_config"]["response_map_discretisation_bin_width"]
+            self.gabor_sigma = self.config["Preprocessing_config"]["transformation_kernel_config"]["gabor"][
+                "gabor_sigma"]
+            self.gabor_lambda = self.config["Preprocessing_config"]["transformation_kernel_config"]["gabor"][
+                "gabor_lambda"]
+            self.laws_kernel = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"][
+                "laws_kernel"]
             self.laws_delta = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"]["laws_delta"]
-            self.laws_compute_energy = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"]["laws_compute_energy"]
-            self.laws_rotation_invariance = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"]["laws_rotation_invariance"]
-            self.laws_pooling_method = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"]["laws_pooling_method"]
-            self.laplacian_of_gaussian_sigma = self.config["Preprocessing_config"]["transformation_kernel_config"]["laplacian_of_gaussian"]["laplacian_of_gaussian_sigma"]
-            self.gaussian_sigma = self.config["Preprocessing_config"]["transformation_kernel_config"]["gaussian"]["gaussian_sigma"]
-            self.nonseparable_wavelet_families = self.config["Preprocessing_config"]["transformation_kernel_config"]["nonseparable_wavelet"]["nonseparable_wavelet_families"]
-            self.nonseparable_wavelet_responses = self.config["Preprocessing_config"]["transformation_kernel_config"]["nonseparable_wavelet"]["nonseparable_wavelet_responses"]
-            self.mean_filter_kernel_size = self.config["Preprocessing_config"]["transformation_kernel_config"]["mean_filter"]["mean_filter_kernel_size"]
+            self.laws_compute_energy = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"][
+                "laws_compute_energy"]
+            self.laws_rotation_invariance = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"][
+                "laws_rotation_invariance"]
+            self.laws_pooling_method = self.config["Preprocessing_config"]["transformation_kernel_config"]["laws"][
+                "laws_pooling_method"]
+            self.laplacian_of_gaussian_sigma = \
+            self.config["Preprocessing_config"]["transformation_kernel_config"]["laplacian_of_gaussian"][
+                "laplacian_of_gaussian_sigma"]
+            self.gaussian_sigma = self.config["Preprocessing_config"]["transformation_kernel_config"]["gaussian"][
+                "gaussian_sigma"]
+            self.nonseparable_wavelet_families = \
+            self.config["Preprocessing_config"]["transformation_kernel_config"]["nonseparable_wavelet"][
+                "nonseparable_wavelet_families"]
+            self.nonseparable_wavelet_responses = \
+            self.config["Preprocessing_config"]["transformation_kernel_config"]["nonseparable_wavelet"][
+                "nonseparable_wavelet_responses"]
+            self.mean_filter_kernel_size = \
+            self.config["Preprocessing_config"]["transformation_kernel_config"]["mean_filter"][
+                "mean_filter_kernel_size"]
 
     def get_mirp_transformation_settings(self):
         MIRP_transformation_settings = pd.DataFrame(columns=["Settings"], index=self.MIRP_transformations)
-        
+
         # if no kernel is given
-        if (self.MIRP_transformations != None) and (self.MIRP_transformations != [None]) :
+        if (self.MIRP_transformations != None) and (self.MIRP_transformations != [None]):
             for i in self.MIRP_transformations:
 
-                #Image_transformation_setting = ImageTransformationSettingsClass()
+                # Image_transformation_setting = ImageTransformationSettingsClass()
 
                 # Garbor Filter
                 if (i == "gabor") or (i == "garbor"):
                     Image_transformation_setting = ImageTransformationSettingsClass(
                         by_slice=False,  # use 3D calculations
                         response_map_discretisation_method=self.response_map_discretisation_method,
-                        response_map_discretisation_bin_width = self.response_map_discretisation_bin_width,
+                        response_map_discretisation_bin_width=self.response_map_discretisation_bin_width,
                         response_map_discretisation_n_bins=self.response_map_discretisation_n_bins,
                         response_map_feature_settings=self.Feature_extraction_settings,
                         response_map_feature_families=self.response_map_feature_families,
@@ -148,7 +151,7 @@ class Transformation_config:
                     Image_transformation_setting = ImageTransformationSettingsClass(
                         by_slice=False,  # use 3D calculations
                         response_map_discretisation_method=self.response_map_discretisation_method,
-                        response_map_discretisation_bin_width = self.response_map_discretisation_bin_width,
+                        response_map_discretisation_bin_width=self.response_map_discretisation_bin_width,
                         response_map_discretisation_n_bins=self.response_map_discretisation_n_bins,
                         response_map_feature_settings=self.Feature_extraction_settings,
                         response_map_feature_families=self.response_map_feature_families,
@@ -161,7 +164,7 @@ class Transformation_config:
                     Image_transformation_setting = ImageTransformationSettingsClass(
                         by_slice=False,  # use 3D calculations
                         response_map_discretisation_method=self.response_map_discretisation_method,
-                        response_map_discretisation_bin_width = self.response_map_discretisation_bin_width,
+                        response_map_discretisation_bin_width=self.response_map_discretisation_bin_width,
                         response_map_discretisation_n_bins=self.response_map_discretisation_n_bins,
                         response_map_feature_settings=self.Feature_extraction_settings,
                         response_map_feature_families=self.response_map_feature_families,
@@ -174,7 +177,7 @@ class Transformation_config:
                     Image_transformation_setting = ImageTransformationSettingsClass(
                         by_slice=False,  # use 3D calculations
                         response_map_discretisation_method=self.response_map_discretisation_method,
-                        response_map_discretisation_bin_width = self.response_map_discretisation_bin_width,
+                        response_map_discretisation_bin_width=self.response_map_discretisation_bin_width,
                         response_map_discretisation_n_bins=self.response_map_discretisation_n_bins,
                         response_map_feature_settings=self.Feature_extraction_settings,
                         response_map_feature_families=self.response_map_feature_families,
@@ -190,7 +193,7 @@ class Transformation_config:
                     Image_transformation_setting = ImageTransformationSettingsClass(
                         by_slice=False,  # use 3D calculations
                         response_map_discretisation_method=self.response_map_discretisation_method,
-                        response_map_discretisation_bin_width = self.response_map_discretisation_bin_width,
+                        response_map_discretisation_bin_width=self.response_map_discretisation_bin_width,
                         response_map_discretisation_n_bins=self.response_map_discretisation_n_bins,
                         response_map_feature_settings=self.Feature_extraction_settings,
                         response_map_feature_families=self.response_map_feature_families,
@@ -207,7 +210,7 @@ class Transformation_config:
                     Image_transformation_setting = ImageTransformationSettingsClass(
                         by_slice=False,  # use 3D calculations
                         response_map_discretisation_method=self.response_map_discretisation_method,
-                        response_map_discretisation_bin_width = self.response_map_discretisation_bin_width,
+                        response_map_discretisation_bin_width=self.response_map_discretisation_bin_width,
                         response_map_discretisation_n_bins=self.response_map_discretisation_n_bins,
                         response_map_feature_settings=self.Feature_extraction_settings,
                         response_map_feature_families=self.response_map_feature_families,
@@ -219,9 +222,9 @@ class Transformation_config:
                 MIRP_transformation_settings.loc[i] = Image_transformation_setting
         else:
             Image_transformation_setting = ImageTransformationSettingsClass(by_slice=False,
-                                                 response_map_feature_settings=None
-                                                )
-                
+                                                                            response_map_feature_settings=None
+                                                                            )
+
             MIRP_transformation_settings.loc[1] = Image_transformation_setting
-                
+
         return MIRP_transformation_settings

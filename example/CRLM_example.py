@@ -1,7 +1,7 @@
-import pandas as pd
-import os
-from WORC import download
 from pathlib import Path
+
+import pandas as pd
+from WORC import download
 
 # download the input files
 
@@ -29,37 +29,32 @@ for idx, row in data.iterrows():
 
 print("Download complete.")
 
-
-from os import path
 import sys
-import os
 
 sys.path.append('/path/to/parent/folder/of/rptk/')
 
-from rptk.rptk import RPTK
-import pandas as pd
-import numpy as np
-from pandas.api.types import is_object_dtype, is_numeric_dtype, is_bool_dtype
-from rptk.src.feature_extraction.Extractor import Extractor
+from rptk import RPTK
+from pandas.api.types import is_numeric_dtype
+
 # -
 
-rptk = RPTK(path2confCSV="data/CRLM_Raw_config_test.csv", 
-             n_cpu = 30,  # number of cpu to use
-             self_optimize = False,  # enable optimize feature extraction
-             input_reformat = True,  # enable reformat for non unique files
-             use_previous_output = False,  # use previous output for feature extraction
-             normalization = False,
-             resampling = False,
-             out_path="output/CRLM_test/"
-           )
+rptk = RPTK(path2confCSV="data/CRLM_Raw_config_test.csv",
+            n_cpu=30,  # number of cpu to use
+            self_optimize=False,  # enable optimize feature extraction
+            input_reformat=True,  # enable reformat for non unique files
+            use_previous_output=False,  # use previous output for feature extraction
+            normalization=False,
+            resampling=False,
+            out_path="output/CRLM_test/"
+            )
 
 # simple application
 # rptk.run()
 
 # Apply each step to see what is goin on (with recommended configuration)
- # get configuration
+# get configuration
 rptk.get_rptk_config()
-    
+
 # create folders
 rptk.create_folders()
 
@@ -87,6 +82,6 @@ rptk.select_features(n_features=10, model=["RandomForestClassifier"])
 
 # predict on selected features
 rptk.predict(
-            selected_features=rptk.selected_features.copy(),
-            shap_analysis=False
-            )
+    selected_features=rptk.selected_features.copy(),
+    shap_analysis=False
+)

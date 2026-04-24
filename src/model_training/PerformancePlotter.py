@@ -1,35 +1,24 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
-import plotly.graph_objects as go
-
-import collections
-import sklearn
-import numpy as np
-import time
 import logging
 import os
-import shap
-import seaborn as sns
+import pickle
 import re
 from collections import defaultdict
 from typing import Optional, List, Tuple, Sequence, Union, Dict
 
-
-from sklearn.feature_selection import SequentialFeatureSelector
-from sklearn.inspection import DecisionBoundaryDisplay
-from sklearn.metrics import RocCurveDisplay, accuracy_score, balanced_accuracy_score, mean_squared_error, \
-    roc_auc_score, average_precision_score, f1_score, confusion_matrix, auc
-
-from mlxtend.feature_selection import SequentialFeatureSelector as SFS
-from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import seaborn as sns
+import shap
 from mlxtend.plotting import plot_decision_regions
-import pickle5 as pickle
-from collections import defaultdict
+from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
+from sklearn.metrics import RocCurveDisplay, confusion_matrix
 
-from rptk.src.config.Log_generator_config import LogGenerator
-from rptk.src.model_training.Optimizer import Optimizer
-from rptk.src.feature_extraction.FeatureConsensus import ConsensusFeatureFormatter
+from src.config.Log_generator_config import LogGenerator
+from src.feature_extraction.FeatureConsensus import ConsensusFeatureFormatter
+from src.model_training.Optimizer import Optimizer
+
 
 class PerformancePlotter:
     """
@@ -88,39 +77,39 @@ class PerformancePlotter:
 
         # ---- Feature Naming Rules ----
         # Multi-token (sequence) rules — applied first
-        self.MIRP_MULTI: list[tuple[Optional[tuple[str, ...] , str], str]] = [
-            (("rlnu","norm"), "RLNUNorm"),
-            (("glnu","norm"), "GLNUNorm"),
-            (("zs","entr"), "ZSEntr"),
-            (("zs","var"), "ZoneSizeVariance"),
-            (("peak","glob"), "GIPeak"),                 # Global intensity peak
-            (("zd","var"), "ZDVar"),                     # Zone distance variance
-            (("diff","entr"), "DiffEntropy"),
-            (("integ","int"), "IntegInt"),               # Integrated intensity
-            (("gauss","s2.0"), "Gauss"),
-            (("s","3.0","g","1.0","l","0.9","t","0.0"), ""), # drop this marker sequence
-            (("inv","diff","mom","norm"), "IDMN"),
-            (("info","corr2"), "InfoMeaCorr2"),
-            (("lgce",), "LGCE"),                         # Low grey level count emphasis
-            (("hdlge",), "HDLGLE"),                      # High dependence low grey level emphasis
-            (("int","mean","int","init","roi"), "MeanInitRoi"),
-            (("diff","i25","i75"), "InterquartileRange"),
-            (("clust","prom"), "ClusterProminence"),
-            (("zd","entr"), "ZeroDistEntropy"),
-            (("inv","var"), "InVar"),
-            (("vol","dens","aabb"), "VolumeDensityAABB"),
-            (("grad","g"), "GradientMagnitude"),
-            (("joint","max"), "JointMax"),
-            (("diff","mean"), "DifferenceMean"),
-            (("dc","energy"), "JointEnergy"),
-            (("int","bb","dim","y","init","roi"), "BoundingBoxDimY_InitRoi"),
-            (("mean","d","15"), "Mean"),
-            (("Mean","d","15"), "Mean"),
-            (("2d","s"), ""),
+        self.MIRP_MULTI: list[tuple[Optional[tuple[str, ...], str], str]] = [
+            (("rlnu", "norm"), "RLNUNorm"),
+            (("glnu", "norm"), "GLNUNorm"),
+            (("zs", "entr"), "ZSEntr"),
+            (("zs", "var"), "ZoneSizeVariance"),
+            (("peak", "glob"), "GIPeak"),  # Global intensity peak
+            (("zd", "var"), "ZDVar"),  # Zone distance variance
+            (("diff", "entr"), "DiffEntropy"),
+            (("integ", "int"), "IntegInt"),  # Integrated intensity
+            (("gauss", "s2.0"), "Gauss"),
+            (("s", "3.0", "g", "1.0", "l", "0.9", "t", "0.0"), ""),  # drop this marker sequence
+            (("inv", "diff", "mom", "norm"), "IDMN"),
+            (("info", "corr2"), "InfoMeaCorr2"),
+            (("lgce",), "LGCE"),  # Low grey level count emphasis
+            (("hdlge",), "HDLGLE"),  # High dependence low grey level emphasis
+            (("int", "mean", "int", "init", "roi"), "MeanInitRoi"),
+            (("diff", "i25", "i75"), "InterquartileRange"),
+            (("clust", "prom"), "ClusterProminence"),
+            (("zd", "entr"), "ZeroDistEntropy"),
+            (("inv", "var"), "InVar"),
+            (("vol", "dens", "aabb"), "VolumeDensityAABB"),
+            (("grad", "g"), "GradientMagnitude"),
+            (("joint", "max"), "JointMax"),
+            (("diff", "mean"), "DifferenceMean"),
+            (("dc", "energy"), "JointEnergy"),
+            (("int", "bb", "dim", "y", "init", "roi"), "BoundingBoxDimY_InitRoi"),
+            (("mean", "d", "15"), "Mean"),
+            (("Mean", "d", "15"), "Mean"),
+            (("2d", "s"), ""),
         ]
 
         # Single-token rules — whole-token only, case-insensitive
-        self.MIRP_SINGLE: dict[str,  Optional[str , None]] = {
+        self.MIRP_SINGLE: dict[str, Optional[str, None]] = {
             # First-order / aggregations
             "avg": "Mean", "av": "Mean", "mean": "Mean",
             "median": "Median",
@@ -142,12 +131,12 @@ class PerformancePlotter:
             "lgre": "LGLRE", "szhge": "SZHGLE",
             "sphericity": "Sphericity",
             "energy": "Energy",
-            "exponential":"Exponential",
-            "complexity":"Complexity",
-            "lre":"LRE",
+            "exponential": "Exponential",
+            "complexity": "Complexity",
+            "lre": "LRE",
 
             # Preprocessing / transforms / markers
-            "sde": "SDE",                  # SmallDistanceEmphasis
+            "sde": "SDE",  # SmallDistanceEmphasis
             "logarithm": "Log",
             "squareroot": "SquareRoot",
             "square": "Square",
@@ -169,7 +158,6 @@ class PerformancePlotter:
             "wavelet-llh": "WaveletLLH",
             "wavelet-hll": "WaveletHLL",
             "wavelet-lhh": "WaveletLHH",
-
 
             # Abbreviations appearing as standalone tokens to drop
             "fbs": "", "mrg": "", "w25.0": "", "l5s5e5": "", "e5e5e5": "",
@@ -202,13 +190,13 @@ class PerformancePlotter:
         }
 
         # Multi-token rules — applied first
-        self.PRAD_MULTI: list[tuple[Optional[tuple[str, ...] , str], str]] = [
-            (("gauss","s2.0"), "Gauss"),
-            (("s","3.0","g","1.0","l","0.9","t","0.0"), ""),  # drop this marker sequence
-            (("mean","d","15"), "Mean"),
-            (("Mean","d","15"), "Mean"),
-            (("intesity","based","statistics"), "Firstorder"),
-            (("Root","mean","square"), "RootMeanSquare"),
+        self.PRAD_MULTI: list[tuple[Optional[tuple[str, ...], str], str]] = [
+            (("gauss", "s2.0"), "Gauss"),
+            (("s", "3.0", "g", "1.0", "l", "0.9", "t", "0.0"), ""),  # drop this marker sequence
+            (("mean", "d", "15"), "Mean"),
+            (("Mean", "d", "15"), "Mean"),
+            (("intesity", "based", "statistics"), "Firstorder"),
+            (("Root", "mean", "square"), "RootMeanSquare"),
         ]
 
         # Single-token rules — whole-token only, case-insensitive
@@ -222,9 +210,9 @@ class PerformancePlotter:
             "SmallDependenceEmphasis": "SDE",
             "Idmn": "IDMN",
             "LowGrayLevelEmphasis": "LGE",
-            "LowGrayLevelZoneEmphasis":"LGZE",
-            "DependenceNonUniformityNormalized":"DNUNorm",
-            "QuantileCoeffDispersion":"QuantCoefDisp",
+            "LowGrayLevelZoneEmphasis": "LGZE",
+            "DependenceNonUniformityNormalized": "DNUNorm",
+            "QuantileCoeffDispersion": "QuantCoefDisp",
             "zscore": "",
             "glcm": "GLCM",
             "glrlm": "GLRLM",
@@ -232,9 +220,9 @@ class PerformancePlotter:
             "gldm": "GLDZM",
             "ngtdm": "NGTDM",
             "ngldm": "NGLDM",
-            "firstorder":"Firstorder",
-            "7":"",
-            "invar":"Invar",
+            "firstorder": "Firstorder",
+            "7": "",
+            "invar": "Invar",
 
             # Transforms / filters
             "gabor": "Gabor",
@@ -245,7 +233,7 @@ class PerformancePlotter:
             "square": "Square",
             "logarithm": "Log",
             "squareroot": "SquareRoot",
-            "original":"",
+            "original": "",
             # "peritumoral": "margin",
 
             # Wavelets (normalize mixed casings)
@@ -269,9 +257,6 @@ class PerformancePlotter:
             "l5s5e5": "",
         }
 
-
-
-
     def plot_sfs_features(self, sfs=None, title: str = "Forward"):
         """
         Plot performance between feature sets.
@@ -282,7 +267,7 @@ class PerformancePlotter:
             self.error.warning("missing SequentialFeatureSelector object for plotting!")
             return
 
-         # 1) Replace underscores with spaces
+        # 1) Replace underscores with spaces
         clean_title = title.replace("_", " ")
         # 2) Remove any standalone 'mlxtend' (case‐insensitive)
         clean_title = re.sub(r'\bmlxtend\b', '', clean_title, flags=re.IGNORECASE)
@@ -399,75 +384,75 @@ class PerformancePlotter:
         Plot AUROC from estimator
         """
         real_model_name = str(type(model).__name__)
-        
-        fig, ax = plt.subplots(figsize=(10,10))
+
+        fig, ax = plt.subplots(figsize=(10, 10))
 
         if out_path is None:
             out_path = self.output_path
 
         if not os.path.exists(out_path):
             os.makedirs(out_path, exist_ok=True)
-        
+
         if "TabNet" in type(model).__name__:
             y_pred = model.predict_proba(X_test.values)[:, 1]
             viz = RocCurveDisplay.from_predictions(
-                                    y_pred=y_pred,
-                                    y_true=y_test,
-                                    name=str(type(model).__name__),
-                                    pos_label=1,
-                                    lw=5)
-            
-        elif "Ensemble" in  type(model).__name__:
-                if "TabNet" in type(model.clfs[1]).__name__:
+                y_pred=y_pred,
+                y_true=y_test,
+                name=str(type(model).__name__),
+                pos_label=1,
+                lw=5)
+
+        elif "Ensemble" in type(model).__name__:
+            if "TabNet" in type(model.clfs[1]).__name__:
+                y_pred = model.predict_proba(X_test.values)[:, 1]
+                viz = RocCurveDisplay.from_predictions(
+                    y_pred=y_pred,
+                    y_true=y_test,
+                    name="Ensemble " + str(type(model.clfs[1]).__name__),
+                    pos_label=1,
+                    lw=5)
+            elif "Ensemble" in type(model.clfs[1]).__name__:
+                if "TabNet" in type(model.clfs[1].clfs[1]).__name__:
                     y_pred = model.predict_proba(X_test.values)[:, 1]
                     viz = RocCurveDisplay.from_predictions(
-                                            y_pred=y_pred,
-                                            y_true=y_test,
-                                            name="Ensemble " + str(type(model.clfs[1]).__name__),
-                                            pos_label=1,
-                                            lw=5)
-                elif "Ensemble" in  type(model.clfs[1]).__name__:
-                    if "TabNet" in type(model.clfs[1].clfs[1]).__name__:
-                        y_pred = model.predict_proba(X_test.values)[:, 1]
-                        viz = RocCurveDisplay.from_predictions(
-                                                y_pred=y_pred,
-                                                y_true=y_test,
-                                                name="Ensemble of Ensemble " + str(type(model.clfs[1].clfs[1]).__name__),
-                                                pos_label=1,
-                                                lw=5)
-                else:
-                    if "Ensemble" in str(type(model).__name__):
-                        simple_model_name = str(type(model.clfs[0]).__name__)
-                        if "RandomForest" in simple_model_name:
-                            tmp_model_name = simple_model_name.replace("Classifier", "")
-                            real_model_name = "Ensemble " + tmp_model_name
-                        else:
-                            real_model_name = "Ensemble " + str(type(model.clfs[0]).__name__)
+                        y_pred=y_pred,
+                        y_true=y_test,
+                        name="Ensemble of Ensemble " + str(type(model.clfs[1].clfs[1]).__name__),
+                        pos_label=1,
+                        lw=5)
+            else:
+                if "Ensemble" in str(type(model).__name__):
+                    simple_model_name = str(type(model.clfs[0]).__name__)
+                    if "RandomForest" in simple_model_name:
+                        tmp_model_name = simple_model_name.replace("Classifier", "")
+                        real_model_name = "Ensemble " + tmp_model_name
                     else:
-                        if "RandomForest" in str(type(model).__name__):
-                            real_model_name = str(type(model).__name__).replace("Classifier", "")
-                        else:
-                            real_model_name = str(type(model).__name__)
+                        real_model_name = "Ensemble " + str(type(model.clfs[0]).__name__)
+                else:
+                    if "RandomForest" in str(type(model).__name__):
+                        real_model_name = str(type(model).__name__).replace("Classifier", "")
+                    else:
+                        real_model_name = str(type(model).__name__)
 
-                    y_pred = model.predict_proba(X_test)[:, 1]
-                    viz = RocCurveDisplay.from_predictions(
-                                            y_pred=y_pred,
-                                            y_true=y_test,
-                                            name=real_model_name,
-                                            pos_label=1,
-                                            lw=5)
-                
-                
+                y_pred = model.predict_proba(X_test)[:, 1]
+                viz = RocCurveDisplay.from_predictions(
+                    y_pred=y_pred,
+                    y_true=y_test,
+                    name=real_model_name,
+                    pos_label=1,
+                    lw=5)
+
+
         else:
             if "RandomForest" in str(type(model).__name__):
                 real_model_name = str(type(model).__name__).replace("Classifier", "")
             else:
                 real_model_name = str(type(model).__name__)
-            viz = RocCurveDisplay.from_estimator(model, 
-                                                 X_test, 
-                                                 y_test, 
+            viz = RocCurveDisplay.from_estimator(model,
+                                                 X_test,
+                                                 y_test,
                                                  name=real_model_name,
-                                                 pos_label=1, 
+                                                 pos_label=1,
                                                  lw=5)
 
         if "Ensemble" in str(type(model).__name__):
@@ -478,10 +463,10 @@ class PerformancePlotter:
         else:
             simple_model_name = str(type(model).__name__)
             real_model_name
-            
+
         if "RandomForest" in simple_model_name:
             simple_model_name = simple_model_name.replace("Classifier", "")
-            
+
         # plt.figure(figsize=(20,20))
 
         viz.plot(ax=ax, linewidth=8, color="deeppink")
@@ -489,9 +474,9 @@ class PerformancePlotter:
         ax.set_title("Test ROC from " + simple_model_name, fontsize=32)
         ax.legend(loc="lower right", bbox_to_anchor=(1.0, 0.0), borderaxespad=0, fontsize=22)
 
-        #plt.title("Test AUROC from " + simple_model_name, fontsize=18)
-        #plt.legend(loc="lower right", bbox_to_anchor=(1.0, 0.0), borderaxespad=0, fontsize=18)
-        #plt.tight_layout()
+        # plt.title("Test AUROC from " + simple_model_name, fontsize=18)
+        # plt.legend(loc="lower right", bbox_to_anchor=(1.0, 0.0), borderaxespad=0, fontsize=18)
+        # plt.tight_layout()
 
         ax.tick_params(axis="x", labelsize=24)
         ax.tick_params(axis="y", labelsize=24)
@@ -503,13 +488,13 @@ class PerformancePlotter:
         ax.set_xticks(np.arange(0.0, 1.1, 0.1))
         ax.set_yticks(np.arange(0.0, 1.1, 0.1))
 
-        #plt.xticks(fontsize=14)
-        #plt.yticks(fontsize=14)
-        
-        #plt.xlabel("False Positive Rate (Positive label: 1)", fontsize=18)
-        #plt.ylabel("True Positive Rate (Positive label: 1)", fontsize=18)
-    
-        fig.savefig(out_path + '/' + model_name + "_test_ROC_curve.png") #, bbox_inches='tight')
+        # plt.xticks(fontsize=14)
+        # plt.yticks(fontsize=14)
+
+        # plt.xlabel("False Positive Rate (Positive label: 1)", fontsize=18)
+        # plt.ylabel("True Positive Rate (Positive label: 1)", fontsize=18)
+
+        fig.savefig(out_path + '/' + model_name + "_test_ROC_curve.png")  # , bbox_inches='tight')
         plt.close(fig)
         plt.clf()
 
@@ -603,7 +588,8 @@ class PerformancePlotter:
         return x_max, y_max, x_stable, y_stable
 
     @staticmethod
-    def plot_summary_auroc(val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models, data, output_path=None, plot_title=None):
+    def plot_summary_auroc(val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models, data, output_path=None,
+                           plot_title=None):
         """
         Plots a summary of AUROC (Area Under the Receiver Operating Characteristic Curve) values 
         for individual fold models, test models, and ensemble models.
@@ -620,13 +606,13 @@ class PerformancePlotter:
         """
         print("test_auc_ensemble_models", test_auc_ensemble_models)
         desired_order = [
-                            "RandomForest",
-                            "TabNet",
-                            "GradientBoosting",
-                            "LGBM",
-                            "XGB",
-                            "SVC",
-                        ]
+            "RandomForest",
+            "TabNet",
+            "GradientBoosting",
+            "LGBM",
+            "XGB",
+            "SVC",
+        ]
 
         ordered_test_auc_ensemble_models = {}
         for ordered_model in desired_order:
@@ -650,17 +636,17 @@ class PerformancePlotter:
                     pass
 
         # Convert validation and test AUROC data into a list of dictionaries
-        fold_val_data = [{"Model": model, "AUC_Type": "Validation_AUC", "AUC": auc} 
-                        for model, aucs in ordered_val_auc_fold_models.items() for auc in aucs]
-        
-        fold_test_data = [{"Model": model, "AUC_Type": "Test_AUC", "AUC": auc} 
-                        for model, aucs in ordered_test_auc_fold_models.items() for auc in aucs]
-        
+        fold_val_data = [{"Model": model, "AUC_Type": "Validation_AUC", "AUC": auc}
+                         for model, aucs in ordered_val_auc_fold_models.items() for auc in aucs]
+
+        fold_test_data = [{"Model": model, "AUC_Type": "Test_AUC", "AUC": auc}
+                          for model, aucs in ordered_test_auc_fold_models.items() for auc in aucs]
+
         # Extract ensemble model data
-        ensemble_test_data = [{"Model": row["Models"], "AUC_Type": "Ensemble_Test_AUC", 
-                            "Test_AUC": row["Test_AUC"], "AUC": row["Bootstrap_AUC"], 
-                            "Std": row["Bootstrap_AUC_std"]}
-                            for _, row in data[data["Models"].str.contains("SoftEnsemble")].iterrows()]
+        ensemble_test_data = [{"Model": row["Models"], "AUC_Type": "Ensemble_Test_AUC",
+                               "Test_AUC": row["Test_AUC"], "AUC": row["Bootstrap_AUC"],
+                               "Std": row["Bootstrap_AUC_std"]}
+                              for _, row in data[data["Models"].str.contains("SoftEnsemble")].iterrows()]
 
         correct_ensemble_test_data = []
 
@@ -673,7 +659,7 @@ class PerformancePlotter:
                             j["Test_AUC"] = float(j["Test_AUC"])
                             j["AUC"] = float(j["AUC"])
                             j["Std"] = float(j["Std"])
-                            #if float(j["Test_AUC"]) == float(test_auc_ensemble_models[i][0]):  # Ensure AUROC values match
+                            # if float(j["Test_AUC"]) == float(test_auc_ensemble_models[i][0]):  # Ensure AUROC values match
                             j["Model"] = i  # Rename model
                             correct_ensemble_test_data.append(j)
                             break
@@ -696,7 +682,7 @@ class PerformancePlotter:
         ensemble_models = [entry["Model"] for entry in correct_ensemble_test_data]
         ensemble_aucs = [entry["AUC"] for entry in correct_ensemble_test_data]
         ensemble_errors = [entry["Std"] for entry in correct_ensemble_test_data]
-        print("ensemble_models",ensemble_models)
+        print("ensemble_models", ensemble_models)
         # Build a lookup for quick indexing
         ensemble_lookup = {m: (auc, err) for m, auc, err in zip(ensemble_models, ensemble_aucs, ensemble_errors)}
 
@@ -705,7 +691,6 @@ class PerformancePlotter:
         aligned_ensemble_y = [ensemble_lookup[m][0] for m in aligned_ensemble_x]
         aligned_ensemble_errors = [ensemble_lookup[m][1] for m in aligned_ensemble_x]
 
-        
         # Initialize data list
         data_list = []
 
@@ -722,10 +707,10 @@ class PerformancePlotter:
             ),
             marker=dict(color='green', size=10, symbol='circle')
         ))
-        
+
         # Create figure
         fig = go.Figure(data=data_list)
-        
+
         # Add Validation AUC
         fig.add_trace(go.Box(
             x=plot_data[plot_data["AUC_Type"] == "Validation_AUC"]["Model"],
@@ -737,8 +722,7 @@ class PerformancePlotter:
             boxmean=True,
             opacity=0.6
         ))
-        
-        
+
         # Add Test AUC
         fig.add_trace(go.Box(
             x=plot_data[plot_data["AUC_Type"] == "Test_AUC"]["Model"],
@@ -752,11 +736,11 @@ class PerformancePlotter:
         ))
 
         # ---- font size controls (change here) ----
-        TITLE_SIZE   = 32
-        AXIS_LABEL   = 20
-        TICK_SIZE    = 18
+        TITLE_SIZE = 32
+        AXIS_LABEL = 20
+        TICK_SIZE = 18
         LEGEND_TITLE = 18
-        LEGEND_TEXT  = 16
+        LEGEND_TEXT = 16
         # ------------------------------------------
 
         # If no custom title was provided
@@ -795,7 +779,7 @@ class PerformancePlotter:
 
         # (Optional) enforce consistent label sizing inside traces (bar text, etc.)
         # fig.update_traces(textfont_size=TICK_SIZE)
-        
+
         # Save the plot as an image if output_path is provided
         if output_path:
             png_file_path = output_path + '/AUROC_Summary_Plot.png'
@@ -804,12 +788,11 @@ class PerformancePlotter:
         else:
             return fig
 
-
     def plot_label_distribution(self,
-                            training_series=None,
-                            testing_series=None,
-                            validation_series=None,
-                            output_path=None):
+                                training_series=None,
+                                testing_series=None,
+                                validation_series=None,
+                                output_path=None):
         """
         Generates a stacked bar plot for counts of values in training, testing, and validation pandas Series.
 
@@ -823,8 +806,10 @@ class PerformancePlotter:
             output_path = self.output_path + "/Label_distribution_" + str(self.RunID) + ".png"
 
         if (training_series is None) or (testing_series is None):
-            self.error.error("Missing Arguments for plotting label distribution! Please provide training and testing labels!")
-            raise ValueError("Missing Arguments for plotting label distribution! Please provide training and testing labels!")
+            self.error.error(
+                "Missing Arguments for plotting label distribution! Please provide training and testing labels!")
+            raise ValueError(
+                "Missing Arguments for plotting label distribution! Please provide training and testing labels!")
 
         # Combine all series to get total labels
         series_list = [training_series, testing_series]
@@ -958,16 +943,16 @@ class PerformancePlotter:
         """
         return re.compile(rf'(^|{self.SEP}){re.escape(token)}({self.SEP}|$)', flags=re.IGNORECASE)
 
-    def _clean_feature_names(self, 
-        cols: List[str],
-        *,
-        multi_rules: Optional[List[Tuple[Union[Sequence[str], str], str]]] = None,
-        single_rules: Optional[Dict[str, Optional[str]]] = None,
-        remove_substrings: Optional[List[str]] = None,
-        remove_regexes: Optional[List[Union[str, re.Pattern]]] = None,  # <-- accept both
-        replace_map: Optional[Dict[str, str]] = None,
-        collapse_underscores: bool = True,
-    ) -> Tuple[List[str], Dict[str, str]]:
+    def _clean_feature_names(self,
+                             cols: List[str],
+                             *,
+                             multi_rules: Optional[List[Tuple[Union[Sequence[str], str], str]]] = None,
+                             single_rules: Optional[Dict[str, Optional[str]]] = None,
+                             remove_substrings: Optional[List[str]] = None,
+                             remove_regexes: Optional[List[Union[str, re.Pattern]]] = None,  # <-- accept both
+                             replace_map: Optional[Dict[str, str]] = None,
+                             collapse_underscores: bool = True,
+                             ) -> Tuple[List[str], Dict[str, str]]:
         """
         Clean and normalize radiomics feature names.
 
@@ -1015,7 +1000,7 @@ class PerformancePlotter:
         remove_substrings = remove_substrings or []
         replace_map = replace_map or {}
         compiled_remove: List[re.Pattern] = []
-        for rgx in (remove_regexes or []):                                   # <-- changed
+        for rgx in (remove_regexes or []):  # <-- changed
             compiled_remove.append(re.compile(rgx) if isinstance(rgx, str) else rgx)
 
         # Precompile MULTI rules (token sequences)
@@ -1108,14 +1093,14 @@ class PerformancePlotter:
         """
 
         plt.rcParams.update({
-                "font.size": 18,            # base font size
-                "axes.titlesize": 20,       # title size
-                "axes.labelsize": 18,       # x/y label size
-                "xtick.labelsize": 16,
-                "ytick.labelsize": 16,
-                "legend.fontsize": 16,
-                "legend.title_fontsize": 18,
-            })
+            "font.size": 18,  # base font size
+            "axes.titlesize": 20,  # title size
+            "axes.labelsize": 18,  # x/y label size
+            "xtick.labelsize": 16,
+            "ytick.labelsize": 16,
+            "legend.fontsize": 16,
+            "legend.title_fontsize": 18,
+        })
 
         print(3 * "#", "Perform SHAP Analysis", 3 * "#")
         shap_values = None
@@ -1128,33 +1113,34 @@ class PerformancePlotter:
         if not hasattr(model, "classes_"):
             if "TabNet" in type(model).__name__:
                 model.fit(X_train=X.values,
-                                y_train=y.values,
-                                eval_set=[(X.values, y.values)],
-                                eval_name=['train'],
-                                eval_metric=['auc'],
-                                max_epochs=100,
-                                patience=10,
-                                batch_size=32,
-                                virtual_batch_size=32,
-                                num_workers=1,
-                                weights=1,
-                                drop_last=False)
+                          y_train=y.values,
+                          eval_set=[(X.values, y.values)],
+                          eval_name=['train'],
+                          eval_metric=['auc'],
+                          max_epochs=100,
+                          patience=10,
+                          batch_size=32,
+                          virtual_batch_size=32,
+                          num_workers=1,
+                          weights=1,
+                          drop_last=False)
             else:
                 model = model.fit(X, y)
 
-        if "Ensemble" in  type(model).__name__:
+        if "Ensemble" in type(model).__name__:
             if dataset is None:
                 title = "Ensemble " + type(model.clfs[0]).__name__
             else:
-                title = f"{extractor} SHAP Values from " + dataset.replace("_"," ") + " \nEnsemble " + type(model.clfs[0]).__name__
+                title = f"{extractor} SHAP Values from " + dataset.replace("_", " ") + " \nEnsemble " + type(
+                    model.clfs[0]).__name__
             explainer_name = "Ensemble_" + type(model.clfs[0]).__name__
         else:
             if dataset is None:
                 title = type(model).__name__
             else:
-                title =  f"{extractor} SHAP Values from " + dataset.replace("_"," ") + " \n" + type(model).__name__
+                title = f"{extractor} SHAP Values from " + dataset.replace("_", " ") + " \n" + type(model).__name__
             explainer_name = type(model).__name__
-        print(title,  type(model).__name__)
+        print(title, type(model).__name__)
         # Check if SHAP has already been processed
         if os.path.exists(output_path + "/" + explainer_name + "_shap_values.pkl"):
             print("Found SHAP Values. Loading ...")
@@ -1172,50 +1158,50 @@ class PerformancePlotter:
                 try:
                     if "TabNet" in type(model).__name__:
                         explainer = shap.Explainer(model=model.predict, masker=X.values, seed=seed)
-                        
+
                         if type(explainer).__name__ == "PermutationExplainer":
-                            max_num = 2 * int(X.shape[1]) + 1 
-                            shap_values = explainer(X.values, max_evals = max_num)
+                            max_num = 2 * int(X.shape[1]) + 1
+                            shap_values = explainer(X.values, max_evals=max_num)
                         else:
                             shap_values = explainer(X.values)
-                            
-                    elif "Ensemble" in  type(model).__name__:
-                        
+
+                    elif "Ensemble" in type(model).__name__:
+
                         if len(model.clfs) > 0:
                             if "TabNet" in type(model.clfs[1]).__name__:
-                                
+
                                 explainer = shap.Explainer(model=model.predict, masker=X.values, seed=seed)
-                                
+
                                 if type(explainer).__name__ == "PermutationExplainer":
-                                    max_num = 2 * int(X.shape[1]) + 1 
-                                    shap_values = explainer(X.values, max_evals = max_num)
+                                    max_num = 2 * int(X.shape[1]) + 1
+                                    shap_values = explainer(X.values, max_evals=max_num)
                                 else:
                                     shap_values = explainer(X.values)
-                                    
-                            elif "Ensemble" in  type(model.clfs[1]).__name__:
+
+                            elif "Ensemble" in type(model.clfs[1]).__name__:
                                 if "TabNet" in type(model.clfs[1].clfs[1]).__name__:
                                     explainer = shap.Explainer(model=model.predict, masker=X.values, seed=seed)
-                                
+
                                     if type(explainer).__name__ == "PermutationExplainer":
-                                        max_num = 2 * int(X.shape[1]) + 1 
-                                        shap_values = explainer(X.values, max_evals = max_num)
+                                        max_num = 2 * int(X.shape[1]) + 1
+                                        shap_values = explainer(X.values, max_evals=max_num)
                                     else:
                                         shap_values = explainer(X.values)
                                 else:
                                     explainer = shap.Explainer(model=model.predict, masker=X, seed=seed)
-                        
+
                                     if type(explainer).__name__ == "PermutationExplainer":
-                                        max_num = 2 * int(X.shape[1]) + 1 
-                                        shap_values = explainer(X, max_evals = max_num)
+                                        max_num = 2 * int(X.shape[1]) + 1
+                                        shap_values = explainer(X, max_evals=max_num)
                                     else:
                                         shap_values = explainer(X)
 
                             else:
                                 explainer = shap.Explainer(model=model.predict, masker=X, seed=seed)
-                        
+
                                 if type(explainer).__name__ == "PermutationExplainer":
-                                    max_num = 2 * int(X.shape[1]) + 1 
-                                    shap_values = explainer(X, max_evals = max_num)
+                                    max_num = 2 * int(X.shape[1]) + 1
+                                    shap_values = explainer(X, max_evals=max_num)
                                 else:
                                     shap_values = explainer(X)
                         else:
@@ -1224,10 +1210,10 @@ class PerformancePlotter:
                             return
                     else:
                         explainer = shap.Explainer(model=model.predict, masker=X, seed=seed)
-                        
+
                         if type(explainer).__name__ == "PermutationExplainer":
-                            max_num = 2 * int(X.shape[1]) + 1 
-                            shap_values = explainer(X, max_evals = max_num)
+                            max_num = 2 * int(X.shape[1]) + 1
+                            shap_values = explainer(X, max_evals=max_num)
                         else:
                             shap_values = explainer(X)
 
@@ -1242,7 +1228,7 @@ class PerformancePlotter:
                         shap_values = explainer(X.values)
                     else:
                         shap_values = explainer(X)
-                
+
                 try:
                     with open(output_path + "/" + explainer_name + "_explainer.pkl", "wb") as f:
                         explainer.save(f)
@@ -1256,21 +1242,20 @@ class PerformancePlotter:
                 except Exception as ex:
                     print(f"Failed saving SHAP values. {ex}")
                     self.error.warning(f"Failed saving SHAP values. {ex}")
-        
+
         for feature in X.copy().columns.to_list():
             if "peritumoral" in feature:
-                new_feature = feature.replace("peritumoral","margin")
+                new_feature = feature.replace("peritumoral", "margin")
                 X = X.rename(columns={feature: new_feature})
                 feature = new_feature
             if "intensity-based_statistics" in feature:
                 print(feature)
-                new_feature = feature.replace("intensity-based_statistics","Firstorder")
+                new_feature = feature.replace("intensity-based_statistics", "Firstorder")
                 X = X.rename(columns={feature: new_feature})
                 feature = new_feature
             if "diagnostics" in feature:
-                new_feature = feature.replace("diagnostics","Diagnostic")
+                new_feature = feature.replace("diagnostics", "Diagnostic")
                 X = X.rename(columns={feature: new_feature})
-                
 
         # === Clean feature names for plotting ===
         if extractor == "MIRP":
@@ -1281,18 +1266,18 @@ class PerformancePlotter:
             single = self.PRAD_SINGLE
 
         cons = ConsensusFeatureFormatter(df=X.copy(),
-                                feature_cols=None, 
-                                extractor=extractor,
-                                output_path=self.output_path,
-                                generate_feature_profile_plot=False,
-                                run_id=self.RunID
-                            )
+                                         feature_cols=None,
+                                         extractor=extractor,
+                                         output_path=self.output_path,
+                                         generate_feature_profile_plot=False,
+                                         run_id=self.RunID
+                                         )
         report, X_clean = cons.run(
-                            title=self.RunID,
-                            return_dataframe=True,
-                            rename_mode="rename"           # or "multiindex" or "add_columns"
-                        )
-        
+            title=self.RunID,
+            return_dataframe=True,
+            rename_mode="rename"  # or "multiindex" or "add_columns"
+        )
+
         cleaned = X_clean.columns.to_list()
 
         real_clean = []
@@ -1307,17 +1292,17 @@ class PerformancePlotter:
             cols=X.copy().columns.to_list(),
             multi_rules=multi,
             single_rules=single,
-           # optional extras:
-            remove_substrings=[],                 # keep empty; token rules handle most
-            remove_regexes=[r'w\d+(?:\.\d+)?'],   # if you still want to drop w25.0/w50.0 anywhere
+            # optional extras:
+            remove_substrings=[],  # keep empty; token rules handle most
+            remove_regexes=[r'w\d+(?:\.\d+)?'],  # if you still want to drop w25.0/w50.0 anywhere
             replace_map={},
             collapse_underscores=True,
         )
-        
+
         # return X.copy().columns.to_list()
         # Copy X just for labeling / clustering; don’t touch model training data
-        #X_clean = X.copy()
-        #X_clean.columns = cleaned
+        # X_clean = X.copy()
+        # X_clean.columns = cleaned
 
         # Ensure SHAP object uses cleaned names so all plots display them
         try:
@@ -1331,10 +1316,10 @@ class PerformancePlotter:
             print("shap_values.feature_names Failed!", ex)
             try:
                 explainer = shap.Explainer(model=model.predict, masker=X, seed=seed)
-                
+
                 if type(explainer).__name__ == "PermutationExplainer":
-                    max_num = 2 * int(X.shape[1]) + 1 
-                    shap_values = explainer(X, max_evals = max_num)
+                    max_num = 2 * int(X.shape[1]) + 1
+                    shap_values = explainer(X, max_evals=max_num)
                 else:
                     shap_values = explainer(X)
                 shap_values.feature_names = cleaned
@@ -1353,13 +1338,14 @@ class PerformancePlotter:
             shap.plots.waterfall(shap_values[0], show=False, max_display=10)
             plt.title(title)
             # plt.tight_layout()
-            
+
             try:
-                plt.savefig(output_path + '/Waterfall_' + type(model).__name__ + "_" + self.RunID + '.png', bbox_inches='tight')
+                plt.savefig(output_path + '/Waterfall_' + type(model).__name__ + "_" + self.RunID + '.png',
+                            bbox_inches='tight')
             except:
                 # if figure size is too big
                 plt.savefig(output_path + '/Waterfall_' + type(model).__name__ + "_" + self.RunID + '.png')
-            
+
             plt.close()
             plt.clf()
 
@@ -1371,7 +1357,8 @@ class PerformancePlotter:
                 shap.plots.force(explainer.expected_value, shap_values[0, :], show=False, matplotlib=True)
                 plt.title(title)
                 # plt.tight_layout()
-                plt.savefig(output_path + '/Force_' + type(model).__name__ + "_" + self.RunID + '.png', bbox_inches='tight')
+                plt.savefig(output_path + '/Force_' + type(model).__name__ + "_" + self.RunID + '.png',
+                            bbox_inches='tight')
                 plt.close()
                 plt.clf()
 
@@ -1390,9 +1377,9 @@ class PerformancePlotter:
             ax.tick_params(axis="y", labelsize=18)
             ax.tick_params(axis="x", labelsize=18)
 
-            for text in ax.texts:   # the "+0.27" annotations
+            for text in ax.texts:  # the "+0.27" annotations
                 text.set_fontsize(16)
-            
+
             # --- Fix colorbar axis ---
             fig = plt.gcf()
             if len(fig.axes) > 1:
@@ -1403,7 +1390,8 @@ class PerformancePlotter:
                     t.set_fontsize(18)
 
             # plt.tight_layout()
-            plt.savefig(output_path + '/Beeswarm_' + type(model).__name__ + "_" + self.RunID + '.png', bbox_inches='tight')
+            plt.savefig(output_path + '/Beeswarm_' + type(model).__name__ + "_" + self.RunID + '.png',
+                        bbox_inches='tight')
             plt.close()
             plt.clf()
 
@@ -1419,7 +1407,7 @@ class PerformancePlotter:
             ax.set_ylabel("Features", fontsize=20)
             ax.tick_params(axis="y", labelsize=18)
             ax.tick_params(axis="x", labelsize=18)
-            for text in ax.texts:   # the "+0.27" annotations
+            for text in ax.texts:  # the "+0.27" annotations
                 text.set_fontsize(16)
             # plt.tight_layout()
             plt.savefig(output_path + '/Bar_' + type(model).__name__ + "_" + self.RunID + '.png', bbox_inches='tight')
@@ -1455,7 +1443,8 @@ class PerformancePlotter:
             plt.clf()
 
     @staticmethod
-    def plot_probability_distribution(df, label_column, proba_column, save_path=None, bins=10, colors=None, title="Distribution of Prediction Probabilities", model_name=""):
+    def plot_probability_distribution(df, label_column, proba_column, save_path=None, bins=10, colors=None,
+                                      title="Distribution of Prediction Probabilities", model_name=""):
         """
         Plots the distribution of prediction probabilities for multiple labels or regression predictions.
         
@@ -1472,7 +1461,7 @@ class PerformancePlotter:
         """
 
         unique_labels = df[label_column].unique()
-        
+
         # Default color mapping if not provided
         if colors is None:
             color_palette = plt.cm.get_cmap("tab10", len(unique_labels))
@@ -1510,15 +1499,14 @@ class PerformancePlotter:
         else:
             print("Plot not saved. Use 'save_path' argument to save the plot.")
             raise ValueError("Plot not saved. Use 'save_path' argument to save the plot.")
-        
-        plt.close()
 
+        plt.close()
 
     def plot_overfitting_plot(self, train_auc_cv, val_auc_cv, test_auc_cv, model_name, output_path):
         """
         Plot performance of model per fold in train/test/val set
         """
-        
+
         folds = range(1, len(train_auc_cv) + 1)
         try:
             plt.plot(folds, train_auc_cv, 'o-', color='green', label='train')
@@ -1530,7 +1518,8 @@ class PerformancePlotter:
             plt.xlabel('Fold')
             plt.ylabel('AUROC')
             plt.tight_layout()
-            plt.savefig(output_path + '/Overfitting_plot_' + model_name + "_" + self.RunID + '.png', bbox_inches='tight')
+            plt.savefig(output_path + '/Overfitting_plot_' + model_name + "_" + self.RunID + '.png',
+                        bbox_inches='tight')
             plt.close()
             plt.clf()
         except:
@@ -1606,7 +1595,7 @@ class PerformancePlotter:
         # plt.close()
 
         return smallest_best_iteration, best_auc, best_parameters
-    
+
     @staticmethod
     def plot_val_auc_distribution(val_auc_dict, save_path=None):
         """
@@ -1623,7 +1612,7 @@ class PerformancePlotter:
         # Convert the dictionary into a list of tuples for plotting
         model_names = list(val_auc_dict.keys())
         auc_values = [val_auc_dict[model] for model in model_names]
-        
+
         # Create a DataFrame for plotting
         auc_df = pd.DataFrame({
             'Model': [model for model in model_names for _ in val_auc_dict[model]],
@@ -1632,7 +1621,7 @@ class PerformancePlotter:
 
         # Save the plot if a save_path is provided
         if save_path:
-             # Create a boxplot for the distribution of Val_AUC for each model
+            # Create a boxplot for the distribution of Val_AUC for each model
             plt.figure(figsize=(12, 6))
             sns.boxplot(x='Model', y='Val_AUC', data=auc_df, palette="Set2")
 
@@ -1640,30 +1629,30 @@ class PerformancePlotter:
             plt.xlabel('Model', fontsize=14)
             plt.ylabel('Val AUC', fontsize=14)
             plt.title('Distribution of Val AUC for Each Model', fontsize=16)
-            
+
             # Set the y-axis to always scale from 0 to 1 and set ticks every 0.1 step
             plt.ylim(0, 1.01)
             plt.yticks([i * 0.1 for i in range(11)])  # Set ticks from 0 to 1 with step size of 0.1
-            
+
             # Rotate the x-axis labels for better readability
             plt.xticks(rotation=90)
-            
+
             # Show the plot
             plt.tight_layout()
             plt.savefig(save_path, bbox_inches='tight')  # Save the plot to the specified file path
-        
+
             plt.close()
             plt.clf()
 
         # Calculate the mean Val_AUC for each model and return the model with the highest mean
         mean_auc = {model: sum(val_auc_dict[model]) / len(val_auc_dict[model]) for model in val_auc_dict}
-        
+
         # Find the model with the best (highest) mean Val_AUC
         best_model = max(mean_auc, key=mean_auc.get)
         # print("Best Model", best_model, mean_auc)
-        
+
         return best_model, mean_auc[best_model]
-    
+
     @staticmethod
     def extract_model_and_fold(model_string):
         """
@@ -1679,7 +1668,7 @@ class PerformancePlotter:
         # Extract the model name (after 'optimized_' and before '_<fold>_on_fold_val')
         model_name_match = re.search(r'optimized_([A-Za-z]+)', model_string)
         fold_match = re.search(r'_(\d+)_on_fold_val', model_string)
-        
+
         if model_name_match and fold_match:
             model_name = model_name_match.group(1)
             fold_number = int(fold_match.group(1))
@@ -1701,16 +1690,15 @@ class PerformancePlotter:
         """
         # Extract the base model name after 'SoftEnsemble_' and before '_cv_'
         model_name_match = re.search(r'SoftEnsemble_([A-Za-z]+)', ensemble_string)
-        
+
         if model_name_match:
             model_name = model_name_match.group(1)
             return model_name
         else:
             return None  # If no match found
 
-
     @staticmethod
-    def get_AUC_values_per_models(df:pd.DataFrame, number_of_folds:int=5):
+    def get_AUC_values_per_models(df: pd.DataFrame, number_of_folds: int = 5):
         """
         This function processes a DataFrame containing AUC values for different models (both fold models and ensemble models),
         and organizes these values into dictionaries for later analysis.
@@ -1735,7 +1723,7 @@ class PerformancePlotter:
             - `test_auc_ensemble_models`: Dictionary of ensemble models with `Test_AUC` values.
         """
 
-        def check_numeric_format_(df:pd.DataFrame, col:str):
+        def check_numeric_format_(df: pd.DataFrame, col: str):
             """
             Convert data if wrong numeric format is present.
             """
@@ -1753,8 +1741,8 @@ class PerformancePlotter:
         test_auc_ensemble_models = {}
 
         # Check format
-        df = check_numeric_format_(df=df , col="Val_AUC")
-        df = check_numeric_format_(df=df , col="Test_AUC")
+        df = check_numeric_format_(df=df, col="Val_AUC")
+        df = check_numeric_format_(df=df, col="Test_AUC")
 
         # Iterate over each model in the 'Models' column
         for model in df["Models"]:
@@ -1782,24 +1770,24 @@ class PerformancePlotter:
                 test_auc_ensemble_models[ens_model] = df.loc[df["Models"] == model, "Test_AUC"].to_list()
 
             # If the model does not fit either category, skip it
-            #else:
+            # else:
             #    print(f"Skipping {model} (not a valid fold or ensemble model)")
-            
+
         # check if all folds are present 
         for cv_model in val_auc_fold_models:
             if len(val_auc_fold_models[cv_model]) != number_of_folds:
                 if len(val_auc_fold_models[cv_model]) > number_of_folds:
-                    print(f"Too many fold results for {cv_model}! Expected {number_of_folds} but got {len(val_auc_fold_models[cv_model])}! Check prediction_summary.csv and log files!")
-                    
+                    print(
+                        f"Too many fold results for {cv_model}! Expected {number_of_folds} but got {len(val_auc_fold_models[cv_model])}! Check prediction_summary.csv and log files!")
+
                 if len(val_auc_fold_models[cv_model]) < number_of_folds:
-                    print(f"Missing fold results for {cv_model}! Expected {number_of_folds} but got {len(val_auc_fold_models[cv_model])}! Check prediction_summary.csv and log files!")
-                
+                    print(
+                        f"Missing fold results for {cv_model}! Expected {number_of_folds} but got {len(val_auc_fold_models[cv_model])}! Check prediction_summary.csv and log files!")
 
         # Return the dictionaries containing the AUC values
         return val_auc_fold_models, test_auc_fold_models, test_auc_ensemble_models
 
-    
-    def check_numeric_format(self, df:pd.DataFrame, col:str):
+    def check_numeric_format(self, df: pd.DataFrame, col: str):
         """
         Convert data if wrong numeric format is present.
         """
@@ -1812,7 +1800,7 @@ class PerformancePlotter:
         return df
 
     @staticmethod
-    def check_numeric_format_(df:pd.DataFrame, col:str):
+    def check_numeric_format_(df: pd.DataFrame, col: str):
         """
         Convert data if wrong numeric format is present.
         """
@@ -1826,13 +1814,13 @@ class PerformancePlotter:
 
     @staticmethod
     def plot_model_auc_ci_vertical(
-                                df, 
-                                filename=None,
-                                model_col='Models', 
-                                mean_col='Bootstrap_AUC', 
-                                lower_col='Bootstrap_AUC_lower', 
-                                upper_col='Bootstrap_AUC_upper',
-                                fig_size=(8, 6)):
+        df,
+        filename=None,
+        model_col='Models',
+        mean_col='Bootstrap_AUC',
+        lower_col='Bootstrap_AUC_lower',
+        upper_col='Bootstrap_AUC_upper',
+        fig_size=(8, 6)):
         """
         Plots each model's AUC confidence interval (CI) as vertical bars, 
         with a red dot for the mean AUC.
@@ -1864,7 +1852,7 @@ class PerformancePlotter:
         fig, ax : matplotlib Figure and Axes (if no filename is provided).
         """
 
-        def check_numeric_format_(df:pd.DataFrame, col:str):
+        def check_numeric_format_(df: pd.DataFrame, col: str):
             """
             Convert data if wrong numeric format is present.
             """
@@ -1880,11 +1868,11 @@ class PerformancePlotter:
         df_plot = df.copy().sort_values(by=mean_col)
         models = df_plot[model_col].values
         x_positions = np.arange(len(models))  # x-axis positions
-        
+
         # Check format
-        df_plot = check_numeric_format_(df=df_plot , col=mean_col)
-        df_plot = check_numeric_format_(df=df_plot , col=lower_col)
-        df_plot = check_numeric_format_(df=df_plot , col=upper_col)
+        df_plot = check_numeric_format_(df=df_plot, col=mean_col)
+        df_plot = check_numeric_format_(df=df_plot, col=lower_col)
+        df_plot = check_numeric_format_(df=df_plot, col=upper_col)
 
         # Extract values
         mean_aucs = df_plot[mean_col].values
@@ -1894,14 +1882,14 @@ class PerformancePlotter:
         fig, ax = plt.subplots(figsize=fig_size)
 
         # Plot vertical error bars for each model
-        ax.errorbar(x_positions, mean_aucs, 
-                    yerr=[mean_aucs - lower_aucs, upper_aucs - mean_aucs], 
+        ax.errorbar(x_positions, mean_aucs,
+                    yerr=[mean_aucs - lower_aucs, upper_aucs - mean_aucs],
                     fmt='o', color='red', markersize=8, capsize=5, label="Mean AUC with 95% CI")
 
         # Set x ticks and labels
         ax.set_xticks(x_positions)
         ax.set_xticklabels(models, rotation=45, ha='right')
-        
+
         # Labels and title
         ax.set_ylabel('Test AUROC')
         ax.set_xlabel('Models')
@@ -1914,7 +1902,7 @@ class PerformancePlotter:
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
-        
+
         if filename:
             plt.savefig(filename, bbox_inches='tight')  # Saves the figure
             print(f"Plot saved to {filename}")
@@ -1925,13 +1913,13 @@ class PerformancePlotter:
 
     @staticmethod
     def plot_model_auc_ci_with_mean(
-                                df, 
-                                filename=None,
-                                model_col='Models', 
-                                mean_col='Bootstrap_AUC', 
-                                lower_col='Bootstrap_AUC_lower', 
-                                upper_col='Bootstrap_AUC_upper',
-                                fig_size=(8, 6)):
+        df,
+        filename=None,
+        model_col='Models',
+        mean_col='Bootstrap_AUC',
+        lower_col='Bootstrap_AUC_lower',
+        upper_col='Bootstrap_AUC_upper',
+        fig_size=(8, 6)):
         """
         Plots each model's AUC confidence interval (CI) with a red dot for the mean,
         and fixes the x-axis range from 0 to 1.0 with steps of 0.1.
@@ -1965,7 +1953,7 @@ class PerformancePlotter:
         df_plot = df.copy().sort_values(by=mean_col)
         models = df_plot[model_col].values
         y_positions = np.arange(len(models))
-        
+
         # Extract values
         mean_aucs = df_plot[mean_col].values
         lower_aucs = df_plot[lower_col].values
@@ -1977,10 +1965,10 @@ class PerformancePlotter:
         for i, (mean_val, low_val, up_val) in enumerate(zip(mean_aucs, lower_aucs, upper_aucs)):
             # Plot the line for CI
             ax.plot([low_val, up_val], [y_positions[i], y_positions[i]], color='blue', lw=2)
-            
+
             # Plot the bars at the ends of the CI
             ax.plot([low_val, low_val], [y_positions[i] - 0.1, y_positions[i] + 0.1], color='blue', lw=2)  # Left bar
-            ax.plot([up_val, up_val], [y_positions[i] - 0.1, y_positions[i] + 0.1], color='blue', lw=2)    # Right bar
+            ax.plot([up_val, up_val], [y_positions[i] - 0.1, y_positions[i] + 0.1], color='blue', lw=2)  # Right bar
 
             # Plot the mean as a red dot
             ax.plot(mean_val, y_positions[i], 'o', color='red', markersize=8)
@@ -1999,7 +1987,7 @@ class PerformancePlotter:
         ax.set_xticks(np.arange(0, 1.1, 0.1))  # Tick values from 0 to 1.0, inclusive
 
         plt.tight_layout()
-        
+
         if not filename is None:
             # Save the plot to a file
             plt.savefig(filename, bbox_inches='tight')  # Saves the figure to the specified file

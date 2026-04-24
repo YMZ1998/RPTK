@@ -5,7 +5,6 @@ from copy import deepcopy
 import numpy as np
 
 from mirp.imageMetaData import get_pydicom_meta_tag, convert_dicom_time, set_pydicom_meta_tag
-from mirp.utilities import get_valid_elements, get_most_common_element
 
 
 class SUVscalingObj:
@@ -23,13 +22,16 @@ class SUVscalingObj:
 
         # Radionuclide administration
         if get_pydicom_meta_tag(dcm_seq=dcm, tag=(0x0054, 0x0016), test_tag=True):
-            radio_admin_start_time = get_pydicom_meta_tag(dcm_seq=dcm[0x0054, 0x0016][0], tag=(0x0018, 0x1078), tag_type="str")
+            radio_admin_start_time = get_pydicom_meta_tag(dcm_seq=dcm[0x0054, 0x0016][0], tag=(0x0018, 0x1078),
+                                                          tag_type="str")
             self.radio_admin_ref_time = convert_dicom_time(datetime_str=radio_admin_start_time)
 
             if self.radio_admin_ref_time is None:
                 # If unsuccessful, attempt determining administration time from (0x0018, 0x1072)
-                radio_admin_start_time = get_pydicom_meta_tag(dcm_seq=dcm[0x0054, 0x0016][0], tag=(0x0018, 0x1072), tag_type="str")
-                self.radio_admin_ref_time = convert_dicom_time(date_str=acquisition_start_date, time_str=radio_admin_start_time)
+                radio_admin_start_time = get_pydicom_meta_tag(dcm_seq=dcm[0x0054, 0x0016][0], tag=(0x0018, 0x1072),
+                                                              tag_type="str")
+                self.radio_admin_ref_time = convert_dicom_time(date_str=acquisition_start_date,
+                                                               time_str=radio_admin_start_time)
         else:
             self.radio_admin_ref_time = None
 
@@ -61,8 +63,10 @@ class SUVscalingObj:
 
         # Radionuclide total dose and radionuclide half-life
         if get_pydicom_meta_tag(dcm_seq=dcm, tag=(0x0054, 0x0016), test_tag=True):
-            self.total_dose = get_pydicom_meta_tag(dcm_seq=dcm[0x0054, 0x0016][0], tag=(0x0018, 0x1074), tag_type="float")
-            self.half_life = get_pydicom_meta_tag(dcm_seq=dcm[0x0054, 0x0016][0], tag=(0x0018, 0x1075), tag_type="float")
+            self.total_dose = get_pydicom_meta_tag(dcm_seq=dcm[0x0054, 0x0016][0], tag=(0x0018, 0x1074),
+                                                   tag_type="float")
+            self.half_life = get_pydicom_meta_tag(dcm_seq=dcm[0x0054, 0x0016][0], tag=(0x0018, 0x1075),
+                                                  tag_type="float")
         else:
             self.total_dose = None
             self.half_life = None
@@ -112,7 +116,8 @@ class SUVscalingObj:
             suv_scale_factor = 1.0
         else:
             if self.voxel_unit is None:
-                logging.warning("SUV scale factor could not be found as the voxel unit tag (0x0054, 0x1001) was missing.")
+                logging.warning(
+                    "SUV scale factor could not be found as the voxel unit tag (0x0054, 0x1001) was missing.")
             else:
                 logging.warning("SUV scale factor %s was not implemented.", self.voxel_unit)
             suv_scale_factor = None
@@ -139,8 +144,9 @@ class SUVscalingObj:
             else:
                 suv_scale_factor = None
         else:
-            logging.warning("Counts (CNTS) could not be converted to SUV, because either the Philips scale factor (0x7053, 0x1000) or the Philips count scale (0x7053, "
-                            "0x1009) was missing.")
+            logging.warning(
+                "Counts (CNTS) could not be converted to SUV, because either the Philips scale factor (0x7053, 0x1000) or the Philips count scale (0x7053, "
+                "0x1009) was missing.")
             suv_scale_factor = None
 
         return suv_scale_factor
@@ -198,7 +204,8 @@ class SUVscalingObj:
 
         # Check whether required settings are provided
         if self.total_dose is None:
-            logging.warning("Radionuclide total dose (0x0018, 0x1074) was not specified in the Radiopharmaceutical information sequence (0x0054, 0x0016).")
+            logging.warning(
+                "Radionuclide total dose (0x0018, 0x1074) was not specified in the Radiopharmaceutical information sequence (0x0054, 0x0016).")
             return None
 
         if self.decay_correction in ["NONE", "START"]:
@@ -215,7 +222,8 @@ class SUVscalingObj:
                 return None
 
             if self.half_life is None:
-                logging.warning("Radionucleitide half-life (0x0018, 0x1075) in the Radiopharmaceutical information sequence (0x0054, 0x0016) is not known.")
+                logging.warning(
+                    "Radionucleitide half-life (0x0018, 0x1075) in the Radiopharmaceutical information sequence (0x0054, 0x0016) is not known.")
                 return None
 
         if self.decay_correction in ["START"]:
@@ -225,7 +233,8 @@ class SUVscalingObj:
         # Process for different decay corrections
         if self.decay_correction == "NONE":
             # No decay correction; correct for period between administration and acquisition + 1/2 frame duration
-            frame_center_time = self.acquisition_ref_time + datetime.timedelta(microseconds=int(np.round(self.frame_duration * 1000.0 / 2.0)))
+            frame_center_time = self.acquisition_ref_time + datetime.timedelta(
+                microseconds=int(np.round(self.frame_duration * 1000.0 / 2.0)))
             decay_factor = np.power(2.0, (frame_center_time - self.radio_admin_ref_time).seconds / self.half_life)
             decayed_dose = self.total_dose / decay_factor
 
@@ -243,7 +252,8 @@ class SUVscalingObj:
             time_count_average = 1 / decay_constant * np.log(decay_during_frame / (1.0 - np.exp(-decay_during_frame)))
 
             # Set reference start time (this may coincide with the series time, but series time may be unreliable).
-            reference_start_time = self.acquisition_ref_time + datetime.timedelta(seconds=(time_count_average - self.frame_reference_time / 1000.0))
+            reference_start_time = self.acquisition_ref_time + datetime.timedelta(
+                seconds=(time_count_average - self.frame_reference_time / 1000.0))
 
             # Compute decay time.
             if reference_start_time >= self.radio_admin_ref_time:
@@ -260,7 +270,8 @@ class SUVscalingObj:
             decayed_dose = self.total_dose
             decay_factor = 1.0
         else:
-            logging.warning(f"Decay correction (0x0054, 0x1102) was not recognized ({self.decay_correction}) and could not be parsed: %s.")
+            logging.warning(
+                f"Decay correction (0x0054, 0x1102) was not recognized ({self.decay_correction}) and could not be parsed: %s.")
             decayed_dose = None
             decay_factor = 1.0
 
@@ -328,17 +339,20 @@ class SUVscalingObj:
         elif suv_type in ["LBM", "LBMJAMES128"]:
             # Lean body weight using James' method with a multiplier of 128 for males
             if self.patient_gender is None:
-                logging.warning("Patient gender was not stored in dicom header. LBM cannot be calculated using James\' method.")
+                logging.warning(
+                    "Patient gender was not stored in dicom header. LBM cannot be calculated using James\' method.")
                 return None
             else:
                 if self.patient_gender.lower() in ["m"]:
-                    norm_factor = 1.10 * self.patient_weight - 128.0 * (self.patient_weight ** 2.0 / (self.patient_height * 100.0) ** 2.0)
+                    norm_factor = 1.10 * self.patient_weight - 128.0 * (
+                            self.patient_weight ** 2.0 / (self.patient_height * 100.0) ** 2.0)
 
                     # From kg to g
                     norm_factor *= 1000.0
 
                 elif self.patient_gender.lower() in ["f", "w"]:
-                    norm_factor = 1.07 * self.patient_weight - 148.0 * (self.patient_weight ** 2.0 / (self.patient_height * 100.0) ** 2.0)
+                    norm_factor = 1.07 * self.patient_weight - 148.0 * (
+                            self.patient_weight ** 2.0 / (self.patient_height * 100.0) ** 2.0)
 
                     # From kg to g
                     norm_factor *= 1000.0
@@ -351,11 +365,12 @@ class SUVscalingObj:
             # Lean body weight using the Janmahasatian's method (male : 9,270 × weight/(6,680 + 216 × BMI); female: 9,270 × weight/(8,780 + 244 × BMI))
             # BMI = weight/height^2 (weight in kg, height in m) (10.2165/00003088-200544100-00004)
             if self.patient_gender is None:
-                logging.warning("Patient gender was not stored in dicom header. LBM cannot be calculated using Janmahasatian\'s method.")
+                logging.warning(
+                    "Patient gender was not stored in dicom header. LBM cannot be calculated using Janmahasatian\'s method.")
                 return None
             else:
                 # Compute bmi
-                bmi = self.patient_weight / (self.patient_height**2.0)
+                bmi = self.patient_weight / (self.patient_height ** 2.0)
                 if self.patient_gender.lower() in ["m"]:
                     norm_factor = 9270.0 * self.patient_weight / (6680.0 + 216.0 * bmi)
 
@@ -368,7 +383,8 @@ class SUVscalingObj:
                     # From kg to g
                     norm_factor *= 1000.0
                 else:
-                    logging.warning("Patient gender was indeterminate. LBM cannot be calculated using Janmahasatian\'s method.")
+                    logging.warning(
+                        "Patient gender was indeterminate. LBM cannot be calculated using Janmahasatian\'s method.")
                     return None
 
         elif suv_type == "IBW":
@@ -389,7 +405,8 @@ class SUVscalingObj:
                     # From kg to g
                     norm_factor *= 1000.0
                 else:
-                    logging.warning("Patient gender was indeterminate. LBM cannot be calculated using Janmahasatian\'s method.")
+                    logging.warning(
+                        "Patient gender was indeterminate. LBM cannot be calculated using Janmahasatian\'s method.")
                     return None
 
         else:
@@ -401,7 +418,7 @@ class SUVscalingObj:
 
         # Update unit of pixel values
         voxel_unit = "CM2ML" if self.suv_type == "BSA" else "GML"
-        set_pydicom_meta_tag(dcm_seq=dcm, tag=(0x0054, 0x1001), value= voxel_unit)
+        set_pydicom_meta_tag(dcm_seq=dcm, tag=(0x0054, 0x1001), value=voxel_unit)
 
         # Update the SUV type
         set_pydicom_meta_tag(dcm_seq=dcm, tag=(0x0054, 0x1006), value=self.suv_type)

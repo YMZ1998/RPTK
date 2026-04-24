@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Add RPTK directory to sys.path so mirp and src are importable
+RPTK_ROOT = Path(__file__).parent.resolve()
+if str(RPTK_ROOT) not in sys.path:
+    sys.path.insert(0, str(RPTK_ROOT))
+
 import argparse
 import logging
-from pathlib import Path
 from typing import List, Union
 
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
-# Assume rptk is installed (pip/poetry). e.g. `pip install -e .` in the RPTK repo.
-from rptk.rptk import RPTK
+# Now import RPTK class (rptk.py in this directory)
+from rptk import RPTK
 
 
 def best_or_int(value: str) -> Union[int, str]:

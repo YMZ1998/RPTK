@@ -1,59 +1,17 @@
-import numpy as np
+import concurrent.futures
 import os
-import tqdm
-from multiprocessing.pool import Pool
-import random
-import sys
-
-from skimage.measure import label
-from skimage.measure import regionprops
-import skimage.morphology
-import argparse
-import operator
-import path
-import time
-import datetime
-import logging
-import glob
-from sklearn.metrics import jaccard_score
-from sklearn.preprocessing import Normalizer
-from skimage.segmentation import expand_labels
-from statistics import mean
-from pathlib import Path  # handle path dirs
-
-import gzip
-import shutil
-
-# +
-import sys
 
 import SimpleITK as sitk
-from skimage.measure import label
-from skimage.measure import regionprops
-import skimage.morphology
-import operator
-import path
-import time
-import datetime
-import logging
-import glob
+import numpy as np
+import tqdm
 
-import concurrent.futures
+from src.config.Log_generator_config import LogGenerator
 
-from sklearn.metrics import jaccard_score
-from skimage.segmentation import expand_labels
-from statistics import mean
 
-from rptk.src.config.Log_generator_config import LogGenerator
-import rptk.src.segmentation_processing.SegProcessor
+# +
 
-from pathlib import Path  # handle path dirs
 
-import gzip
-import shutil
-import pandas as pd
-
-#from src.image_processing.DataHandler import *
+# from src.image_processing.DataHandler import *
 
 
 class MR_Normalizer:
@@ -84,8 +42,7 @@ class MR_Normalizer:
         if self.logger is None:
             self.logger = LogGenerator(log_file_name=self.outpath + "normalizer.log",
                                        logger_topic="Normalization").generate()
-            
-            
+
         os.environ['OMP_NUM_THREADS'] = str(self.n_cpu)
 
     def z_score_normalize(self, image_path):
@@ -117,18 +74,19 @@ class MR_Normalizer:
         self.logger.info("Start z-score normalization")
         self.logger.info("Write z-score normalization to " + self.outpath)
         self.logger.info("Z-score normalization of " + str(len(self.img_paths)) + " images")
-        
+
         with tqdm.tqdm(total=len(self.img_paths), desc='Performing Z-score normalization') as pbar:
             with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
                 # futures = {executor.submit(func, row): row for row in chunk}
                 # for future in concurrent.futures.as_completed(futures):
-                for results in executor.map(self.z_score_normalize, [row for row in self.img_paths], chunksize=self.chunksize):
+                for results in executor.map(self.z_score_normalize, [row for row in self.img_paths],
+                                            chunksize=self.chunksize):
                     pbar.update(1)
-        
-        #p = Pool(self.n_cpu)
-        #p.map(self.z_score_normalize, self.img_paths, chunksize=self.chunksize)
-        #p.close()
-        #p.join()
+
+        # p = Pool(self.n_cpu)
+        # p.map(self.z_score_normalize, self.img_paths, chunksize=self.chunksize)
+        # p.close()
+        # p.join()
 
     def N4BiasFieldCorrection(self,
                               image_path,
@@ -160,16 +118,16 @@ class MR_Normalizer:
 
         corrected_image_full_resolution = inputimage / sitk.Exp(log_bias_field)
 
-        #corr_array = sitk.GetArrayFromImage(corrected_image_full_resolution)
+        # corr_array = sitk.GetArrayFromImage(corrected_image_full_resolution)
 
-        #transformed_file_name = os.path.basename(image_path)[:-len(".nii.gz")] + "_N4BF_normalized.nii.gz"
+        # transformed_file_name = os.path.basename(image_path)[:-len(".nii.gz")] + "_N4BF_normalized.nii.gz"
 
-        #write_nifti_file(corr_array, self.outpath + transformed_file_name, image_path, self.logger)
+        # write_nifti_file(corr_array, self.outpath + transformed_file_name, image_path, self.logger)
 
-        #log_bias_field_arr = sitk.GetArrayFromImage(log_bias_field)
-        #log_bias_field_file_name = os.path.basename(image_path)[:-len(".nii.gz")] + "_N4BF_log_bias.nii.gz"
+        # log_bias_field_arr = sitk.GetArrayFromImage(log_bias_field)
+        # log_bias_field_file_name = os.path.basename(image_path)[:-len(".nii.gz")] + "_N4BF_log_bias.nii.gz"
 
-        #write_nifti_file(log_bias_field_arr, self.outpath + log_bias_field_file_name, image_path, self.logger)
+        # write_nifti_file(log_bias_field_arr, self.outpath + log_bias_field_file_name, image_path, self.logger)
 
         log_bias_corrected_image_arr = sitk.GetArrayFromImage(corrected_image)
         # replace NaNs with 0
@@ -178,7 +136,7 @@ class MR_Normalizer:
 
         # self.logger.info("N4BF normalization: " + os.path.basename(image_path))
         write_nifti_file(log_bias_corrected_image_arr, self.outpath + log_bias_field_corrected_image_name,
-                              image_path, self.logger)
+                         image_path, self.logger)
 
     def N4BF_exe(self):
         """
@@ -189,19 +147,21 @@ class MR_Normalizer:
         self.logger.info("Start N4BiasFieldCorrection")
         self.logger.info("Write N4BiasFieldCorrection to " + self.outpath)
         self.logger.info("N4BF normalization of " + str(len(self.img_paths)) + " images")
-        
+
         with tqdm.tqdm(total=len(self.img_paths), desc='Performing N4BiasFieldCorrection') as pbar:
             with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
                 # futures = {executor.submit(func, row): row for row in chunk}
                 # for future in concurrent.futures.as_completed(futures):
-                for results in executor.map(self.N4BiasFieldCorrection, [row for row in self.img_paths], chunksize=self.chunksize):
+                for results in executor.map(self.N4BiasFieldCorrection, [row for row in self.img_paths],
+                                            chunksize=self.chunksize):
                     pbar.update(1)
                     # result = pd.concat([result, results.to_frame().T], ignore_index=True)
-        
-        #p = Pool(self.n_cpu)
-        #p.map(self.N4BiasFieldCorrection, self.img_paths, chunksize=self.chunksize)
-        #p.close()
-        #p.join()
+
+        # p = Pool(self.n_cpu)
+        # p.map(self.N4BiasFieldCorrection, self.img_paths, chunksize=self.chunksize)
+        # p.close()
+        # p.join()
+
 
 def write_nifti_file(array, out_file_name, path, logger):
     """

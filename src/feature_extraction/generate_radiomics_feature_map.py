@@ -1,18 +1,15 @@
-
-
-import radiomics
-from radiomics import *
-import tqdm
-import click
-import SimpleITK as sitk
-import six
-import yaml
 import os
-import pandas as pd
 import time
 
-from rptk.src.config.Log_generator_config import LogGenerator
-from rptk.src.feature_filtering.Feature_formater import FeatureFormatter
+import SimpleITK as sitk
+import radiomics
+import six
+import tqdm
+import yaml
+
+from src.config.Log_generator_config import LogGenerator
+from src.feature_filtering.Feature_formater import FeatureFormatter
+
 
 class RadiomicsMapGenerator:
     def __init__(self,
@@ -55,7 +52,8 @@ class RadiomicsMapGenerator:
             logger_topic="Feature Map Generation Error"
         ).generate_log()
 
-        self.ID = os.path.basename(self.path_to_img)[:-len(".nii.gz")] + "_" + os.path.basename(self.path_to_msk)[:-len(".nii.gz")]
+        self.ID = os.path.basename(self.path_to_img)[:-len(".nii.gz")] + "_" + os.path.basename(self.path_to_msk)[
+                                                                               :-len(".nii.gz")]
 
         # only take PyRadiomics errors:
         radiomics.logger = self.logger
@@ -95,7 +93,8 @@ class RadiomicsMapGenerator:
                 if feat_class in self.feature_class_mapping_dict:
                     features[self.feature_class_mapping_dict[feat_class]].append(feature)
                 else:
-                    self.logger.info("Can not generate feature map for {} of feature class {}.".format(feature, feat_class))
+                    self.logger.info(
+                        "Can not generate feature map for {} of feature class {}.".format(feature, feat_class))
 
         if self.extraction_yaml is None:
 
@@ -135,7 +134,3 @@ class RadiomicsMapGenerator:
                 self.logger.info('Computed %s, stored as "%s_%s.nii.gz"' % (featureName, self.ID, featureName))
             else:
                 self.logger.info('%s: %s' % (featureName, featureValue))
-
-
-
-

@@ -1,64 +1,34 @@
 # +
 
-import numpy as np
-import os
-import tqdm
-from multiprocessing.pool import Pool
 import concurrent.futures as cf
-import random
-import sys
-from pprint import pprint
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-import SimpleITK as sitk
-from skimage.measure import label
-from skimage.measure import regionprops
-import skimage.morphology
-import argparse
-import operator
-import path
-import time
-import datetime
-import logging
 import glob
-from pandas.api.types import is_string_dtype
-
-from sklearn.metrics import jaccard_score
-from sklearn.preprocessing import Normalizer
-from skimage.segmentation import expand_labels
-
-from statistics import mean
-import pandas as pd
-from pathlib import Path  # handle path dirs
-from tqdm.contrib.concurrent import process_map  # parallel processing bar
-from functools import partial
-import nibabel as nib
-
-from sklearn.metrics import confusion_matrix
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import gzip
-import shutil
 import re
+import shutil
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
+from multiprocessing.pool import Pool
+from pathlib import Path  # handle path dirs
 from typing import Union
 
-from rptk.mirp import *
-from rptk.mirp.experimentClass import ExperimentClass
-from rptk.mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass, \
-    ImageInterpolationSettingsClass, RoiInterpolationSettingsClass, ResegmentationSettingsClass, \
-    ImagePerturbationSettingsClass, ImageTransformationSettingsClass, FeatureExtractionSettingsClass
+import SimpleITK as sitk
+import matplotlib.pyplot as plt
+import nibabel as nib
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import skimage.morphology
+import tqdm
+from pandas.api.types import is_string_dtype
 
-from rptk.src.image_processing.Resampler import Resampler
-from rptk.src.config.Log_generator_config import LogGenerator
-from rptk.src.segmentation_processing.SegmentationFilters import SegmentationFilter
-from rptk.src.segmentation_processing.Segmentation_perturbator import CCExtender, SupervoxelPerturbator, \
+from mirp import *
+from src.config.Log_generator_config import LogGenerator
+from src.image_processing.MR_Normalizer import MR_Normalizer
+from src.image_processing.Resampler import Resampler
+from src.image_processing.Transform_Executer import Executor
+from src.segmentation_processing.SegmentationFilters import SegmentationFilter
+from src.segmentation_processing.Segmentation_perturbator import CCExtender, SupervoxelPerturbator, \
     PeriTumoralSegmentator, RandomWalker
-from rptk.src.image_processing.Transform_Executer import Executor
-from rptk.src.image_processing.MR_Normalizer import MR_Normalizer
-
-from rptk import rptk
 
 
 # -
@@ -153,9 +123,9 @@ class SegProcessor:
                  self_optimize: bool = False,  # Optimizes the parameters for better feature extraction
                  mean_slice_thickness: int = 0,
                  resample_slice_thickness_threshold: int = 6,
-                 fast_mode : bool = False,  # Mode for slow processing but saving memory
-                 timeout : int = 500,  #  Time [s] until to wait for perturbation processing
-                 seed : int = 1234,  # Seed for random perturbation
+                 fast_mode: bool = False,  # Mode for slow processing but saving memory
+                 timeout: int = 500,  # Time [s] until to wait for perturbation processing
+                 seed: int = 1234,  # Seed for random perturbation
                  pertubration_closing_correction: bool = False,  # Correct the perturbation with closing
                  pertubration_convex_correction: bool = False,  # Correct the perturbation with convex hull
                  ):
@@ -235,22 +205,22 @@ class SegProcessor:
                             "gaussian",
                             "laws",
                             "mean",
-                            "Gradient", 
-                            #'WaveletLLH', 
-                            #'WaveletLLL', 
-                            #'WaveletHLL', 
-                            #'WaveletHHL', 
-                            #'WaveletLHL', 
-                            #'WaveletHHH', 
-                            #'WaveletHLH', 
-                            #'WaveletLHH', 
-                            'Square', 
-                            'SquareRoot', 
-                            'Logarithm', 
-                            'Exponential', 
-                            'Gradient', 
-                            'LBP2D', 
-                            'LBP3D', 
+                            "Gradient",
+                            # 'WaveletLLH',
+                            # 'WaveletLLL',
+                            # 'WaveletHLL',
+                            # 'WaveletHHL',
+                            # 'WaveletLHL',
+                            # 'WaveletHHH',
+                            # 'WaveletHLH',
+                            # 'WaveletLHH',
+                            'Square',
+                            'SquareRoot',
+                            'Logarithm',
+                            'Exponential',
+                            'Gradient',
+                            'LBP2D',
+                            'LBP3D',
                             'LoG']
 
         if self.out_path == "":
@@ -363,10 +333,9 @@ class SegProcessor:
                                       "log_": "laplacian_of_gaussian",
                                       "log-": "LoG"}
 
-
         self.needed_columns = ["ID", "Image", "Mask", "Prediction_Label",
-                          "Modality", "ROI_Label", "Image_Transformation",
-                          "Mask_Transformation", "Timepoint", "Rater"]
+                               "Modality", "ROI_Label", "Image_Transformation",
+                               "Mask_Transformation", "Timepoint", "Rater"]
         self.trans_to_process = {}
 
     def check_format(self, df: pd.DataFrame = pd.DataFrame()):
@@ -408,7 +377,7 @@ class SegProcessor:
             if replace == False:
                 self.error.warning("CSV FORMAT WARNING: Please provide a CSV file with columns Modality")
                 print("CSV FORMAT WARNING: Modality is missing in CSV file")
-                #raise ValueError("CSV FORMAT ERROR: Please provide a CSV file with columns Modality")
+                # raise ValueError("CSV FORMAT ERROR: Please provide a CSV file with columns Modality")
 
         if len(df) == 0:
             self.error.error("Please provide a CSV file with columns Image, Mask, Modality")
@@ -597,7 +566,8 @@ class SegProcessor:
                 with cf.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
                     # Use tqdm with map to show progress
                     for result in tqdm.tqdm(executor.map(partial_function, list(set(out_files))),
-                                            total=len(list(set(out_files))), desc="Checking transformed Image Completeness"):
+                                            total=len(list(set(out_files))),
+                                            desc="Checking transformed Image Completeness"):
                         if result is not None:
                             results.append(result)
 
@@ -726,7 +696,7 @@ class SegProcessor:
                     for k in kernel:
                         if k in trans_to_process:
                             for img in list(
-                                    set(SamplesOI.loc[SamplesOI["Image_Transformation"].isna(), "Image"].to_list())):
+                                set(SamplesOI.loc[SamplesOI["Image_Transformation"].isna(), "Image"].to_list())):
                                 if img not in trans_to_process[k]:
                                     trans_to_process[k].append(img)
                         else:
@@ -774,7 +744,8 @@ class SegProcessor:
                     if os.stat(self.out_path + "/" + self.RunID + "_preprocessing_out.csv").st_size != 0:
                         self.df = pd.read_csv(self.out_path + "/" + self.RunID + "_preprocessing_out.csv")
                     else:
-                        self.error.warning(f'The preprocessing file from the previous run {self.out_path + "/" + self.RunID + "_preprocessing_out.csv"} is empty. Removing ...')
+                        self.error.warning(
+                            f'The preprocessing file from the previous run {self.out_path + "/" + self.RunID + "_preprocessing_out.csv"} is empty. Removing ...')
                         os.remove(self.out_path + "/" + self.RunID + "_preprocessing_out.csv")
 
                 missing_resample = 0
@@ -788,11 +759,11 @@ class SegProcessor:
                 # Check dataframe for each kernel transformation done for image
                 # Checking transformation kernels
                 self.transform_exe = Executor(rptk_config_json=self.rptk_config_json,
-                                         input_csv=self.path2csv,
-                                         output_dir=self.out_path + "/transformed_images/",
-                                         logger=self.logger,
-                                         error=self.error,
-                                         RunID=self.RunID)
+                                              input_csv=self.path2csv,
+                                              output_dir=self.out_path + "/transformed_images/",
+                                              logger=self.logger,
+                                              error=self.error,
+                                              RunID=self.RunID)
 
                 # check for valid kernels in config
                 for kernel in self.kernels:
@@ -817,7 +788,7 @@ class SegProcessor:
 
                 out_t_files = []  # transformed files with valid kernel
                 failed_out_files = []  # wrongly transformed files with not valid kernel
-                
+
                 if len(out_t_imgs) > 0:
                     # check for output files containing valid kernels
                     for t_img in tqdm.tqdm(out_t_imgs, desc='Scanning for Transformed Images'):
@@ -841,7 +812,8 @@ class SegProcessor:
                 print("Found {} transformed images in output folder".format(len(out_t_files)))
 
                 if len(failed_out_files) > 0:
-                    self.error.warning("Found {} Files with non valid kernel. These files were deleted.".format(str(len(failed_out_files))))
+                    self.error.warning("Found {} Files with non valid kernel. These files were deleted.".format(
+                        str(len(failed_out_files))))
                     self.error.warning("Deleted non valid files: " + str(failed_out_files))
 
                 # check if the output file exists
@@ -894,7 +866,7 @@ class SegProcessor:
                         # Resampling
                         if self.resampling:
                             img_file = os.path.basename(img)
-                            if not "resampled" in img_file: # img.endswith("_resampled.nii.gz"):
+                            if not "resampled" in img_file:  # img.endswith("_resampled.nii.gz"):
                                 missing_resample += 1
                                 # self.error.warning("The output file from the previous preprocessing does not contain any resampled images for sample: " + sample)
                                 if sample not in self.resample_to_process:
@@ -998,7 +970,7 @@ class SegProcessor:
                             # check if each segmentation and image has been resampled
                             for img in imgs:
                                 img_file = os.path.basename(img)
-                                if not "resampled" in img_file: # if not img.endswith("_resampled.nii.gz"):
+                                if not "resampled" in img_file:  # if not img.endswith("_resampled.nii.gz"):
                                     missing_resample += 1
                                     # self.error.warning("The output file from the previous preprocessing does not contain any resampled images for sample: " + sample)
                                     if sample not in self.resample_to_process:
@@ -1256,13 +1228,14 @@ class SegProcessor:
 
         image_transformation_samples = self.df.loc[~self.df["Image_Transformation"].isnull()]
 
-        for i,r in tqdm.tqdm(image_transformation_samples.iterrows(), total=len(image_transformation_samples), desc='Correcting Image Kernel Confguration'):
+        for i, r in tqdm.tqdm(image_transformation_samples.iterrows(), total=len(image_transformation_samples),
+                              desc='Correcting Image Kernel Confguration'):
             filename = os.path.basename(r["Image"])
             transformation = r["Image_Transformation"]
 
-            for trans in self.kernels_in_files_dict :
+            for trans in self.kernels_in_files_dict:
                 if trans in filename:
-                    
+
                     try:
                         config = re.search(trans + "([-0-9A-Za-z-_.]*).nii.gz", filename).group(1)
                     except:
@@ -1270,9 +1243,10 @@ class SegProcessor:
 
                     # check if config is not correct
                     if transformation != self.kernels_in_files_dict[trans] + config:
-                        self.df.loc[self.df["Image"] == r["Image"], "Image_Transformation"] = self.kernels_in_files_dict[trans] + config
+                        self.df.loc[self.df["Image"] == r["Image"], "Image_Transformation"] = \
+                        self.kernels_in_files_dict[trans] + config
                     break
-        
+
         self.df = self.df.drop_duplicates(subset=['Image', 'Mask'])
 
     # Dice computation for binary 3D masks
@@ -1329,15 +1303,15 @@ class SegProcessor:
         try:
             file_name = os.path.basename(file_path)
 
-             # get mask transformation algorithm
+            # get mask transformation algorithm
             if "random_walker" in file_name:
-                mask_Transformation  = "random_walker"
+                mask_Transformation = "random_walker"
             elif "morph" in file_name:
-                mask_Transformation  = "super_voxel_randomization"
+                mask_Transformation = "super_voxel_randomization"
             elif "expanded" in file_name:
-                mask_Transformation  = "Connected_Component_Expansion"
+                mask_Transformation = "Connected_Component_Expansion"
             else:
-                mask_Transformation  = "Unknown"
+                mask_Transformation = "Unknown"
 
             # find ground truth mask ID
             found = False
@@ -1380,13 +1354,13 @@ class SegProcessor:
         """
 
         os.makedirs(output_dir, exist_ok=True)
-        
+
         if not output_dir.endswith("/"):
             output_dir = output_dir + "/"
-        
+
         if os.path.isfile(output_dir + "dice_scores.csv"):
             dice_df = pd.read_csv(output_dir + "dice_scores.csv")
-        
+
         else:
             # Separate ground truth and perturbed masks
             gt_df = df[(df['Mask_Transformation'].isna()) & (df['Image_Transformation'].isna())]
@@ -1401,7 +1375,8 @@ class SegProcessor:
 
                 with ThreadPoolExecutor(max_workers=num_workers) as executor:
                     futures = [executor.submit(self.compute_external_dice, f, gt_df) for f in perturbed_files]
-                    for future in tqdm.tqdm(as_completed(futures), total=len(futures), desc="Computing Dice Distribution"):
+                    for future in tqdm.tqdm(as_completed(futures), total=len(futures),
+                                            desc="Computing Dice Distribution"):
                         result = future.result()
                         if result:
                             dice_scores.append(result)
@@ -1411,7 +1386,8 @@ class SegProcessor:
 
                 with ThreadPoolExecutor(max_workers=num_workers) as executor:
                     futures = [executor.submit(self.compute_dice, row) for _, row in merged_df.iterrows()]
-                    for future in tqdm.tqdm(as_completed(futures), total=len(futures), desc="Computing Dice Distribution"):
+                    for future in tqdm.tqdm(as_completed(futures), total=len(futures),
+                                            desc="Computing Dice Distribution"):
                         result = future.result()
                         if result:
                             dice_scores.append(result)
@@ -1427,8 +1403,8 @@ class SegProcessor:
         plt.figure(figsize=(16, 14))
         sns.set(style="whitegrid", context="talk")
         ax = sns.boxplot(data=dice_df, x='Mask_Transformation', y='Dice', color='lightgray', linewidth=2)
-        sns.stripplot(data=dice_df, x='Mask_Transformation', y='Dice', 
-                    jitter=True, dodge=True, alpha=0.6, color='black', size=5)
+        sns.stripplot(data=dice_df, x='Mask_Transformation', y='Dice',
+                      jitter=True, dodge=True, alpha=0.6, color='black', size=5)
 
         plt.xticks(rotation=45, ha='right')
         plt.title("Dice Score Distribution per Mask Transformation Algorithm", fontsize=18)
@@ -1442,7 +1418,6 @@ class SegProcessor:
         plot_path = os.path.join(output_dir, "dice_distribution_plot.png")
         plt.savefig(plot_path, dpi=300)
         plt.close()
-
 
     def process(self):
         """
@@ -1477,7 +1452,7 @@ class SegProcessor:
         if self.resampling:
             print("Resample Images and Segmentations ...")
             Resample_processing(self).process_resampling()
-        #else:
+        # else:
         #    self.logger.info("Using previous output. No resampling necessary.")
         #    print("Using previous output. No resampling necessary.")
 
@@ -1486,14 +1461,16 @@ class SegProcessor:
             if self.normalization:
                 if self.modality == "CT":
                     print("Warning Normalization of CT Images is not recommended. CT Images should be normalized.")
-                    self.error.warning("Warning Normalization of CT Images is not recommended. CT Images should be normalized.")
+                    self.error.warning(
+                        "Warning Normalization of CT Images is not recommended. CT Images should be normalized.")
                 print("### Starting Image Normalization ...")
                 Normalization_processing(self).process_normalization()
                 self.df.drop_duplicates(subset=['Image', 'Mask'], inplace=True, keep='first')
             else:
                 if (self.modality == "MR") or (self.modality == "MRI"):
                     print("Warning Normalization of MR Images is recommended. MR Images are normally not normalized.")
-                    self.error.warning("Warning Normalization of MR Images is recommended. MR Images are normally not normalized.")
+                    self.error.warning(
+                        "Warning Normalization of MR Images is recommended. MR Images are normally not normalized.")
         else:
             self.logger.info("Using previous output. No normalization necessary.")
             print("Using previous output. No normalization necessary.")
@@ -1503,7 +1480,7 @@ class SegProcessor:
             if "Image_Transformation" not in self.df.columns:
                 self.df["Image_Transformation"] = np.nan
             if ("Z-score_normalized" in self.df["Image_Transformation"].values) or (
-                    "N4BF_normalized" in self.df["Image_Transformation"].values):
+                "N4BF_normalized" in self.df["Image_Transformation"].values):
                 # drop samples were Image Transformation is nan
                 self.df = self.df.loc[~self.df["Image_Transformation"].isna()]
 
@@ -1524,8 +1501,9 @@ class SegProcessor:
             print("Using previous output. No segmentation filtering necessary.")
 
         print("Checking Segmentation filter completeness ...")
-        self.df = SegProcessor.check_output_for_non_preprocessed_files(df = self.df.copy(), out_path = self.out_path, resampling=self.resampling)
-        
+        self.df = SegProcessor.check_output_for_non_preprocessed_files(df=self.df.copy(), out_path=self.out_path,
+                                                                       resampling=self.resampling)
+
         # Summarize results from segmentation perturbation
         self.df.to_csv(self.out_path + "/" + self.RunID + "_preprocessing_out.csv", index=False)
 
@@ -1542,13 +1520,12 @@ class SegProcessor:
             Segmentation_perturbation_processing(self).process_surround_segmentation()
             self.df.drop_duplicates(subset=['Image', 'Mask'], inplace=True, keep='first')
 
-
         self.transform_exe = Executor(rptk_config_json=self.rptk_config_json,
-                                 input_csv=self.path2csv,
-                                 output_dir=self.out_path + "/transformed_images/",
-                                 logger=self.logger,
-                                 error=self.error,
-                                 RunID=self.RunID)
+                                      input_csv=self.path2csv,
+                                      output_dir=self.out_path + "/transformed_images/",
+                                      logger=self.logger,
+                                      error=self.error,
+                                      RunID=self.RunID)
 
         self.df = self.csv_image_transformation(input_csv=self.df,
                                                 kernels_in_files=self.transform_exe.kernels_in_files,
@@ -1563,13 +1540,13 @@ class SegProcessor:
 
         # 5. Apply Image Transformation
         if self.image_transformation:
-            self.image_transformer = Image_Transformation_processing(self) 
+            self.image_transformer = Image_Transformation_processing(self)
             self.image_transformer.process_image_transformation()
 
             # Image_Transformation_processing(self).process_image_transformation()
             self.df.drop_duplicates(subset=['Image', 'Mask'], inplace=True, keep='first')
 
-            unnamed_cols = rptk.get_unnamed_cols(self.df)
+            unnamed_cols = get_unnamed_cols(self.df)
             if len(unnamed_cols) > 0:
                 self.logger.info("Unnamed columns found: " + str(unnamed_cols))
                 self.df = self.df.drop(columns=unnamed_cols)
@@ -1600,7 +1577,8 @@ class SegProcessor:
 
         # self.df = SegProcessor.check_output_for_non_preprocessed_files(df = self.df.copy())
         print("Checking Segmentation filter processing ...")
-        self.df = SegProcessor.check_output_for_non_preprocessed_files(df = self.df.copy(), out_path = self.out_path, resampling=self.resampling)
+        self.df = SegProcessor.check_output_for_non_preprocessed_files(df=self.df.copy(), out_path=self.out_path,
+                                                                       resampling=self.resampling)
 
         self.df = self.df.drop_duplicates(subset=['Image', 'Mask'])
 
@@ -1609,10 +1587,12 @@ class SegProcessor:
         # if perturbations should be processed
         if len(self.perturbation_method) > 0:
             # get distribution of all accepted perturbations
-            self.analyze_dice_distribution(self.df, self.out_path + "/plots/accepted_dice_distribution/", num_workers=self.n_cpu)
+            self.analyze_dice_distribution(self.df, self.out_path + "/plots/accepted_dice_distribution/",
+                                           num_workers=self.n_cpu)
 
             # get distribution of all perturbations
-            self.analyze_dice_distribution(self.df, self.out_path + "/plots/all_dice_distribution/", num_workers=self.n_cpu, perturbed_folder=self.out_path + "/perturbed_seg/")
+            self.analyze_dice_distribution(self.df, self.out_path + "/plots/all_dice_distribution/",
+                                           num_workers=self.n_cpu, perturbed_folder=self.out_path + "/perturbed_seg/")
 
         print("Preprocessing Done! Results in " + str(self.out_path + "/" + self.RunID + "_preprocessing_out.csv"))
         self.logger.info(
@@ -1700,7 +1680,6 @@ class SegProcessor:
                             output.loc[output["ID"] == IDOI, "ID"] = file_ID
                             IDOI = file_ID
                         break
-
 
             if IDOI != "":
                 if transformation == "":
@@ -1804,15 +1783,19 @@ class SegProcessor:
             if transformation is not None:
                 if transformation[0] == "Image_Transformation":
                     image_transformation = transformation[1]
-                    mask_transformation = output.loc[output[column_to_combine_with] == combine, "Mask_Transformation"].values[0]
+                    mask_transformation = \
+                    output.loc[output[column_to_combine_with] == combine, "Mask_Transformation"].values[0]
                     rater = output.loc[output[column_to_combine_with] == combine, "Rater"].values[0]
                 elif transformation[0] == "Mask_Transformation":
-                    image_transformation = output.loc[output[column_to_combine_with] == combine, "Image_Transformation"].values[0]
+                    image_transformation = \
+                    output.loc[output[column_to_combine_with] == combine, "Image_Transformation"].values[0]
                     mask_transformation = transformation[1]
                     rater = transformation[1]
             else:
-                image_transformation = output.loc[output[column_to_combine_with] == combine, "Image_Transformation"].values[0]
-                mask_transformation = output.loc[output[column_to_combine_with] == combine, "Mask_Transformation"].values[0]
+                image_transformation = \
+                output.loc[output[column_to_combine_with] == combine, "Image_Transformation"].values[0]
+                mask_transformation = \
+                output.loc[output[column_to_combine_with] == combine, "Mask_Transformation"].values[0]
                 rater = output.loc[output[column_to_combine_with] == combine, "Rater"].values[0]
 
             if "ID" in output.columns:
@@ -1822,49 +1805,64 @@ class SegProcessor:
 
             if column_to_add_data_to == "Mask":
                 output_tmp = self.add_new_csv_entry(ID=ID,
-                                       img_path=
-                                       output.loc[output[column_to_combine_with] == combine, "Image"].values[0],
-                                       seg_path=missing_sample,
-                                       modality=
-                                       output.loc[output[column_to_combine_with] == combine, "Modality"].values[
-                                           0],
-                                       roi_label=
-                                       output.loc[output[column_to_combine_with] == combine, "ROI_Label"].values[0],
-                                       image_transformation=image_transformation,
-                                       mask_transformation=mask_transformation,
-                                       timepoint=
-                                       output.loc[output[column_to_combine_with] == combine, "Timepoint"].values[0],
-                                       rater=rater,
-                                       prediction_label=
-                                       output.loc[
-                                           output[column_to_combine_with] == combine, "Prediction_Label"].values[
-                                           0],
-                                       df=output)
+                                                    img_path=
+                                                    output.loc[
+                                                        output[column_to_combine_with] == combine, "Image"].values[0],
+                                                    seg_path=missing_sample,
+                                                    modality=
+                                                    output.loc[
+                                                        output[column_to_combine_with] == combine, "Modality"].values[
+                                                        0],
+                                                    roi_label=
+                                                    output.loc[
+                                                        output[column_to_combine_with] == combine, "ROI_Label"].values[
+                                                        0],
+                                                    image_transformation=image_transformation,
+                                                    mask_transformation=mask_transformation,
+                                                    timepoint=
+                                                    output.loc[
+                                                        output[column_to_combine_with] == combine, "Timepoint"].values[
+                                                        0],
+                                                    rater=rater,
+                                                    prediction_label=
+                                                    output.loc[
+                                                        output[
+                                                            column_to_combine_with] == combine, "Prediction_Label"].values[
+                                                        0],
+                                                    df=output)
 
 
             elif column_to_add_data_to == "Image":
                 output_tmp = self.add_new_csv_entry(ID=ID,
-                                       img_path=missing_sample,
-                                       seg_path=
-                                       output.loc[output[column_to_combine_with] == combine, "Mask"].values[0],
-                                       modality=
-                                       output.loc[output[column_to_combine_with] == combine, "Modality"].values[
-                                           0],
-                                       roi_label=
-                                       output.loc[output[column_to_combine_with] == combine, "ROI_Label"].values[0],
-                                       image_transformation=image_transformation,
-                                       mask_transformation=mask_transformation,
-                                       timepoint=
-                                       output.loc[output[column_to_combine_with] == combine, "Timepoint"].values[0],
-                                       rater=rater,
-                                       prediction_label=
-                                       output.loc[
-                                           output[column_to_combine_with] == combine, "Prediction_Label"].values[
-                                           0],
-                                       df=output)
+                                                    img_path=missing_sample,
+                                                    seg_path=
+                                                    output.loc[
+                                                        output[column_to_combine_with] == combine, "Mask"].values[0],
+                                                    modality=
+                                                    output.loc[
+                                                        output[column_to_combine_with] == combine, "Modality"].values[
+                                                        0],
+                                                    roi_label=
+                                                    output.loc[
+                                                        output[column_to_combine_with] == combine, "ROI_Label"].values[
+                                                        0],
+                                                    image_transformation=image_transformation,
+                                                    mask_transformation=mask_transformation,
+                                                    timepoint=
+                                                    output.loc[
+                                                        output[column_to_combine_with] == combine, "Timepoint"].values[
+                                                        0],
+                                                    rater=rater,
+                                                    prediction_label=
+                                                    output.loc[
+                                                        output[
+                                                            column_to_combine_with] == combine, "Prediction_Label"].values[
+                                                        0],
+                                                    df=output)
             else:
                 self.error.error("Error please define valid column to add data to (Image or Mask).")
-                raise ValueError("Missing column_to_add_data_to variable. Please define valid column to add data to (Image or Mask).")
+                raise ValueError(
+                    "Missing column_to_add_data_to variable. Please define valid column to add data to (Image or Mask).")
 
             added_combinations = pd.concat([added_combinations, output_tmp], ignore_index=True)
 
@@ -1891,7 +1889,7 @@ class SegProcessor:
                         that match the criteria.
         """
 
-         # check if all segmentations are 
+        # check if all segmentations are
 
         # 1. get all non transformed samples
         if "Mask_Transformation" in df.columns:
@@ -1899,103 +1897,112 @@ class SegProcessor:
         else:
             df["Mask_Transformation"] = np.nan
             non_transformed = df.copy()
-            
-        #if "Image_Transformation" in df.columns:
+
+        # if "Image_Transformation" in df.columns:
         #    non_transformed = non_transformed.copy()[non_transformed["Image_Transformation"].isnull()]
-        #else:
+        # else:
         #    df["Image_Transformation"] = np.nan
         #    non_transformed["Image_Transformation"] = np.nan
 
         multilabel_segs = glob.glob(out_path + "/multilabel_seg/*.nii.gz")
 
-        for msk_path in tqdm.tqdm(non_transformed["Mask"].to_list(), total=len(non_transformed["Mask"]), desc="Check for preprocessed data"):
+        for msk_path in tqdm.tqdm(non_transformed["Mask"].to_list(), total=len(non_transformed["Mask"]),
+                                  desc="Check for preprocessed data"):
             if "multilabel_seg/" not in msk_path:
                 if resampling:
                     if "resampled" not in os.path.basename(msk_path):
-                        id_ = str(non_transformed.loc[non_transformed["Mask"]==msk_path, "ID"])
+                        id_ = str(non_transformed.loc[non_transformed["Mask"] == msk_path, "ID"])
                         print(f"Warning Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
-                        #self.error.error(f"Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
+                        # self.error.error(f"Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
                         raise ValueError(f"Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
-                    
+
                 # Try to find filtered segmentation in folder matching segmentation name
                 mask_file_pattern = os.path.basename(msk_path)[:-len(".nii.gz")]
                 found = False
 
                 for multilabel_seg_path in multilabel_segs:
-                    multilabel_seg = os.path.basename(multilabel_seg_path) 
+                    multilabel_seg = os.path.basename(multilabel_seg_path)
                     if multilabel_seg.startswith(mask_file_pattern):
                         df.loc[df["Mask"] == msk_path, "Mask"] = os.path.abspath(multilabel_seg_path)
                         found = True
                         break
 
                 if not found:
-                    id_ = str(non_transformed.loc[non_transformed["Mask"]==msk_path, "ID"])
-                    print(f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {msk_path}!")
-                    #self.error.warning(f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {msk_path}!")
+                    id_ = str(non_transformed.loc[non_transformed["Mask"] == msk_path, "ID"])
+                    print(
+                        f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {msk_path}!")
+                    # self.error.warning(f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {msk_path}!")
                     # raise ValueError(f"Warning could not find filtered Segmentation for Sample {non_transformed.loc[non_transformed["Mask"]==msk_path, "ID"]} with Segmentation {msk_path}!")
-        
+
         if "Mask_Transformation" in df.columns:
             # check for peritumoral seg
             peritumoral_segs = glob.glob(out_path + "/peritumor_seg/*.nii.gz")
             if len(peritumoral_segs) > 0:
                 non_transformed = df.copy()[df["Mask_Transformation"] == "Peritumoral"]
                 if len(non_transformed) > 0:
-                    
-                    for peri_msk_path in tqdm.tqdm(non_transformed["Mask"].to_list(), total=len(non_transformed["Mask"]), desc="Check for preprocessed peritumoral msks"):
-                        if "peritumor_seg/"  in peri_msk_path:
+
+                    for peri_msk_path in tqdm.tqdm(non_transformed["Mask"].to_list(),
+                                                   total=len(non_transformed["Mask"]),
+                                                   desc="Check for preprocessed peritumoral msks"):
+                        if "peritumor_seg/" in peri_msk_path:
                             if resampling:
                                 if "resampled" not in os.path.basename(msk_path):
-                                    id_ = str(non_transformed.loc[non_transformed["Mask"]==msk_path, "ID"])
-                                    print(f"Warning Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
-                                    #self.error.error(f"Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
-                                    raise ValueError(f"Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
-                                
+                                    id_ = str(non_transformed.loc[non_transformed["Mask"] == msk_path, "ID"])
+                                    print(
+                                        f"Warning Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
+                                    # self.error.error(f"Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
+                                    raise ValueError(
+                                        f"Segmentation not resampled for Sample {id_} with Segmentation {msk_path}!")
+
                             # Try to find filtered segmentation in folder matching segmentation name
                             mask_file_pattern = os.path.basename(peri_msk_path)[:-len("_3_peritumoral.nii.gz")]
                             found = False
 
                             for multilabel_seg_path in peritumoral_segs:
-                                multilabel_seg = os.path.basename(multilabel_seg_path) 
+                                multilabel_seg = os.path.basename(multilabel_seg_path)
                                 if multilabel_seg.startswith(mask_file_pattern):
                                     df.loc[df["Mask"] == peri_msk_path, "Mask"] = os.path.abspath(multilabel_seg_path)
                                     found = True
                                     break
 
                             if not found:
-                                id_ = str(non_transformed.loc[non_transformed["Mask"]==peri_msk_path, "ID"])
-                                print(f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {peri_msk_path}!")
-                                #self.error.warning(f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {peri_msk_path}!")
+                                id_ = str(non_transformed.loc[non_transformed["Mask"] == peri_msk_path, "ID"])
+                                print(
+                                    f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {peri_msk_path}!")
+                                # self.error.warning(f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {peri_msk_path}!")
 
                 else:
                     # add peritumoral samples to df if there are no peritumoral segs in the data
                     non_transformed = df.copy()[df["Mask_Transformation"].isnull()]
-                    for msk_path in tqdm.tqdm(non_transformed["Mask"].to_list(), total=len(non_transformed["Mask"]), desc="Add preprocessed peritumoral msks"):
+                    for msk_path in tqdm.tqdm(non_transformed["Mask"].to_list(), total=len(non_transformed["Mask"]),
+                                              desc="Add preprocessed peritumoral msks"):
                         mask_file_pattern = os.path.basename(msk_path)[:-len("_3_peritumoral.nii.gz")]
                         found = False
 
                         for peritumoral_segs_path in peritumoral_segs:
-                            peritumoral_seg = os.path.basename(peritumoral_segs_path) 
+                            peritumoral_seg = os.path.basename(peritumoral_segs_path)
                             if peritumoral_seg.startswith(mask_file_pattern):
                                 entry = df.copy().loc[df["Mask"] == msk_path]
                                 entry["Mask"] = os.path.abspath(peritumoral_segs_path)
                                 entry["Mask_Transformation"] = "Peritumoral"
-                                df = pd.concat([df,entry], ignore_index=True)
+                                df = pd.concat([df, entry], ignore_index=True)
                                 found = True
                                 break
 
                         if not found:
-                            id_ = str(non_transformed.loc[non_transformed["Mask"]==msk_path, "ID"])
-                            print(f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {msk_path}!")
+                            id_ = str(non_transformed.loc[non_transformed["Mask"] == msk_path, "ID"])
+                            print(
+                                f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {msk_path}!")
                             # self.error.warning(f"Warning could not find filtered Segmentation for Sample {id_} with Segmentation {msk_path}!")
 
 
             else:
                 print("No Peritumoral Segmentations found! Check output folder " + out_path + "/peritumor_seg/")
-        #else:
-            # add peritumoral samples to df
+        # else:
+        # add peritumoral samples to df
 
         # Filter for non-preprocessed files in the file
-        #for i, row in tqdm.tqdm(df.copy().iterrows(), total=len(df), desc="Check for preprocessed data"):
+        # for i, row in tqdm.tqdm(df.copy().iterrows(), total=len(df), desc="Check for preprocessed data"):
         #    if '/input_reformated/' in row["Mask"]:
         #        mask_file = os.path.basename(str(row.copy()["Mask"]))[:-len(".nii.gz")]
         #        for multi_label_seg in multilabel_segs:
@@ -2005,7 +2012,6 @@ class SegProcessor:
         #                break
 
         return df
-
 
     def check_output_completeness(self):
         """
@@ -2043,12 +2049,12 @@ class SegProcessor:
                                                              input_target="Resampled Images")
 
             # Filtered Segmentations should be resampled!
-            #resampled_msk = glob.glob(self.out_path + "/resampled/seg/*.nii.gz")
-            #missing_samples = self.find_missing_samples_in_output(files=resampled_msk,
+            # resampled_msk = glob.glob(self.out_path + "/resampled/seg/*.nii.gz")
+            # missing_samples = self.find_missing_samples_in_output(files=resampled_msk,
             #                                                      output=self.df,
             #                                                      column_to_search_for_data="Mask",
             #                                                      input_target="Resampled Masks")
-            #if missing_samples is not None:
+            # if missing_samples is not None:
             #    self.df = self.add_missing_samples_to_output(missing_files=missing_samples,
             #                                                 output=self.df,
             #                                                 column_to_add_data_to="Mask",
@@ -2088,11 +2094,12 @@ class SegProcessor:
             if before != after:
                 print(f"Found wrong formatted resampling. Dropped {str(int(before) - int(after))} Samples.")
                 self.logger.info(f"Found wrong formatted resampling. Dropped {str(int(before) - int(after))} Samples.")
-            
+
             if len(accepted_perturbed_seg) > 0:
                 # check for all processed Mask Transformations if there are all combinations with the Images of the samples
                 for msk in tqdm.tqdm(accepted_perturbed_seg, desc="Checking for completeness of Mask Perturbations"):
-                    mask_transformation = Segmentation_perturbation_processing(self).get_mask_transformation_from_file(msk)
+                    mask_transformation = Segmentation_perturbation_processing(self).get_mask_transformation_from_file(
+                        msk)
 
                     # get ID
                     IDs = list(set(self.df["ID"].values))
@@ -2110,18 +2117,23 @@ class SegProcessor:
                     # check if all combinations between target image and masks are included
                     for img in list(set(SampleIO["Image"].values)):
                         out = self.add_new_csv_entry(ID=SampleIO.loc[SampleIO["Image"] == img, "ID"].values[0],
-                                            img_path=img,
-                                            seg_path=msk,
-                                            modality=SampleIO.loc[SampleIO["Image"] == img, "Modality"].values[0],
-                                            roi_label=SampleIO.loc[SampleIO["Image"] == img, "ROI_Label"].values[0],
-                                            image_transformation=
-                                            SampleIO.loc[SampleIO["Image"] == img, "Image_Transformation"].values[0],
-                                            mask_transformation=mask_transformation,
-                                            timepoint=SampleIO.loc[SampleIO["Image"] == img, "Timepoint"].values[0],
-                                            rater=mask_transformation,
-                                            prediction_label=
-                                            SampleIO.loc[SampleIO["Image"] == img, "Prediction_Label"].values[0],
-                                            df=out)
+                                                     img_path=img,
+                                                     seg_path=msk,
+                                                     modality=SampleIO.loc[SampleIO["Image"] == img, "Modality"].values[
+                                                         0],
+                                                     roi_label=
+                                                     SampleIO.loc[SampleIO["Image"] == img, "ROI_Label"].values[0],
+                                                     image_transformation=
+                                                     SampleIO.loc[
+                                                         SampleIO["Image"] == img, "Image_Transformation"].values[0],
+                                                     mask_transformation=mask_transformation,
+                                                     timepoint=
+                                                     SampleIO.loc[SampleIO["Image"] == img, "Timepoint"].values[0],
+                                                     rater=mask_transformation,
+                                                     prediction_label=
+                                                     SampleIO.loc[SampleIO["Image"] == img, "Prediction_Label"].values[
+                                                         0],
+                                                     df=out)
 
                     self.df = pd.concat([self.df, out], ignore_index=True)
 
@@ -2225,18 +2237,18 @@ class SegProcessor:
             # check if all combinations between target image and masks are included
             for msk in list(set(SampleIO["Mask"].values)):
                 out = self.add_new_csv_entry(ID=SampleIO.loc[SampleIO["Mask"] == msk, "ID"].values[0],
-                                       img_path=img,
-                                       seg_path=SampleIO.loc[SampleIO["Mask"] == msk, "ID"].values[0],
-                                       modality=SampleIO.loc[SampleIO["Mask"] == msk, "Modality"].values[0],
-                                       roi_label=SampleIO.loc[SampleIO["Mask"] == msk, "ROI_Label"].values[0],
-                                       image_transformation=np.nan,
-                                       mask_transformation=
-                                       SampleIO.loc[SampleIO["Mask"] == msk, "Mask_Transformation"].values[0],
-                                       timepoint=SampleIO.loc[SampleIO["Mask"] == msk, "Timepoint"].values[0],
-                                       rater=SampleIO.loc[SampleIO["Mask"] == msk, "Rater"].values[0],
-                                       prediction_label=
-                                       SampleIO.loc[SampleIO["Mask"] == msk, "Prediction_Label"].values[0],
-                                       df=out)
+                                             img_path=img,
+                                             seg_path=SampleIO.loc[SampleIO["Mask"] == msk, "ID"].values[0],
+                                             modality=SampleIO.loc[SampleIO["Mask"] == msk, "Modality"].values[0],
+                                             roi_label=SampleIO.loc[SampleIO["Mask"] == msk, "ROI_Label"].values[0],
+                                             image_transformation=np.nan,
+                                             mask_transformation=
+                                             SampleIO.loc[SampleIO["Mask"] == msk, "Mask_Transformation"].values[0],
+                                             timepoint=SampleIO.loc[SampleIO["Mask"] == msk, "Timepoint"].values[0],
+                                             rater=SampleIO.loc[SampleIO["Mask"] == msk, "Rater"].values[0],
+                                             prediction_label=
+                                             SampleIO.loc[SampleIO["Mask"] == msk, "Prediction_Label"].values[0],
+                                             df=out)
 
             self.df = pd.concat([self.df, out], ignore_index=True)
 
@@ -2307,18 +2319,21 @@ class SegProcessor:
                 # check if all combinations between target image and masks are included
                 for img in list(set(SampleIO["Image"].values)):
                     out = self.add_new_csv_entry(ID=SampleIO.loc[SampleIO["Image"] == img, "ID"].values[0],
-                                           img_path=img,
-                                           seg_path=msk,
-                                           modality=SampleIO.loc[SampleIO["Image"] == img, "Modality"].values[0],
-                                           roi_label=SampleIO.loc[SampleIO["Image"] == img, "ROI_Label"].values[0],
-                                           image_transformation=
-                                           SampleIO.loc[SampleIO["Image"] == img, "Image_Transformation"].values[0],
-                                           mask_transformation=mask_transformation,
-                                           timepoint=SampleIO.loc[SampleIO["Image"] == img, "Timepoint"].values[0],
-                                           rater=mask_transformation,
-                                           prediction_label=
-                                           SampleIO.loc[SampleIO["Image"] == img, "Prediction_Label"].values[0],
-                                           df=out)
+                                                 img_path=img,
+                                                 seg_path=msk,
+                                                 modality=SampleIO.loc[SampleIO["Image"] == img, "Modality"].values[0],
+                                                 roi_label=SampleIO.loc[SampleIO["Image"] == img, "ROI_Label"].values[
+                                                     0],
+                                                 image_transformation=
+                                                 SampleIO.loc[SampleIO["Image"] == img, "Image_Transformation"].values[
+                                                     0],
+                                                 mask_transformation=mask_transformation,
+                                                 timepoint=SampleIO.loc[SampleIO["Image"] == img, "Timepoint"].values[
+                                                     0],
+                                                 rater=mask_transformation,
+                                                 prediction_label=
+                                                 SampleIO.loc[SampleIO["Image"] == img, "Prediction_Label"].values[0],
+                                                 df=out)
 
                 self.df = pd.concat([self.df, out], ignore_index=True)
 
@@ -2334,7 +2349,8 @@ class SegProcessor:
             self.df = self.df[df['Mask'].notna()]
 
         if self.df[self.df['Image'].isnull()].shape[0] > 0:
-            self.error.warning("Got NaN in Image for {} Samples".format(str(self.df[self.df['Image'].isnull()].shape[0])))
+            self.error.warning(
+                "Got NaN in Image for {} Samples".format(str(self.df[self.df['Image'].isnull()].shape[0])))
             print("Got NaN in Image for {} Samples".format(str(self.df[self.df['Image'].isnull()].shape[0])))
             self.df = self.df[df['Image'].notna()]
 
@@ -2343,7 +2359,8 @@ class SegProcessor:
         self.df = self.df[self.df["Mask"].str.contains('.nii.gz', na=False)]
 
         # check if non transformed data includes duplicates
-        raw = self.df.copy()[(self.df.copy()["Image_Transformation"].isnull()) & (self.df.copy()["Mask_Transformation"].isnull())]
+        raw = self.df.copy()[
+            (self.df.copy()["Image_Transformation"].isnull()) & (self.df.copy()["Mask_Transformation"].isnull())]
         if len(raw[raw.index.duplicated()]) > 0:
             df = self.df.copy()
             df = df.reset_index()
@@ -2362,10 +2379,15 @@ class SegProcessor:
 
         self.df.to_csv(self.out_path + "/" + self.RunID + "_preprocessing_out.csv", index=False)
 
-        raw = self.df.copy()[(self.df.copy()["Image_Transformation"].isnull()) & (self.df.copy()["Mask_Transformation"].isnull())]
+        raw = self.df.copy()[
+            (self.df.copy()["Image_Transformation"].isnull()) & (self.df.copy()["Mask_Transformation"].isnull())]
         if len(raw[raw.index.duplicated()]) > 0:
-            self.error.error("Found duplicates in non transformed samples! Please check your file for duplications {}!".format(str(self.out_path + "/" + self.RunID + "_preprocessing_out.csv")))
-            raise ValueError("Found duplicates in non transformed samples! Please check your file for duplications {}!".format(str(self.out_path + "/" + self.RunID + "_preprocessing_out.csv")))
+            self.error.error(
+                "Found duplicates in non transformed samples! Please check your file for duplications {}!".format(
+                    str(self.out_path + "/" + self.RunID + "_preprocessing_out.csv")))
+            raise ValueError(
+                "Found duplicates in non transformed samples! Please check your file for duplications {}!".format(
+                    str(self.out_path + "/" + self.RunID + "_preprocessing_out.csv")))
 
         # get all normalized images
         # if self.normalization:
@@ -2500,6 +2522,7 @@ class SegProcessor:
                     break
         return kernel
 
+
 class Resample_processing(SegProcessor):
     """
     Class for resampling images and segmentations to a given resolution.
@@ -2543,7 +2566,7 @@ class Resample_processing(SegProcessor):
                 print("No previous resampled images and segmentations found. Resampling ...")
             else:
                 print("Found previous resampled images and segmentations. Use them ...")
-                print("Loading data from",self.segprocessor.resampling_seg_out,"...")
+                print("Loading data from", self.segprocessor.resampling_seg_out, "...")
 
                 # make common file patterns
                 resampled_files_seg_files = [os.path.basename(file_path)[:-len("_resampled.nii.gz")] for file_path in
@@ -2591,17 +2614,23 @@ class Resample_processing(SegProcessor):
 
         if (len(input_msk) > 0) or (len(input_imgs) > 0):
             if self.segprocessor.self_optimize:
-                if int(self.segprocessor.mean_slice_thickness) > int(self.segprocessor.resample_slice_thickness_threshold):
-                    self.segprocessor.logger.info("Resample images as slice thickness of this dataset exceeds the threshold of " + str(int(self.segprocessor.resample_slice_thickness_threshold)) + ": "+ str(self.segprocessor.mean_slice_thickness))
+                if int(self.segprocessor.mean_slice_thickness) > int(
+                    self.segprocessor.resample_slice_thickness_threshold):
+                    self.segprocessor.logger.info(
+                        "Resample images as slice thickness of this dataset exceeds the threshold of " + str(
+                            int(self.segprocessor.resample_slice_thickness_threshold)) + ": " + str(
+                            self.segprocessor.mean_slice_thickness))
                     sampling = [1.0]
                 else:
-                    self.segprocessor.logger.info("Resampling not necessary as slice thickness of this dataset is: " + str(self.segprocessor.mean_slice_thickness))
+                    self.segprocessor.logger.info(
+                        "Resampling not necessary as slice thickness of this dataset is: " + str(
+                            self.segprocessor.mean_slice_thickness))
                     sampling = [self.segprocessor.mean_slice_thickness]
             else:
                 # default
                 sampling = [1.0]
-            
-            if len(sampling) >0:
+
+            if len(sampling) > 0:
                 if len(input_msk) > 0:
                     self.segprocessor.logger.info("Resampling Segmentations ...")
                     # 1. resample msk
@@ -2650,7 +2679,8 @@ class Resample_processing(SegProcessor):
 
                             resampled_img_file_pattern = os.path.basename(resampled_img)[:-len("_resampled.nii.gz")]
                             # search here resampled img and resampled mask are fitting to the nun resampled file pattern as they do not match to each other
-                            if (resampled_seg_file_pattern == msk_pattern) and (resampled_img_file_pattern == img_pattern):
+                            if (resampled_seg_file_pattern == msk_pattern) and (
+                                resampled_img_file_pattern == img_pattern):
                                 # check for transformation and different scanner protocols - if so, add transformation to ID
                                 # if len(self.scanner_protocols) > 0:
                                 #     transformation = row["Image_Transformation"].values[0] + "_resampled_" + str(self.isotropic_scale) + "_mm"
@@ -2752,10 +2782,10 @@ class Resample_processing(SegProcessor):
                         # replace normal images with resampled images
                         self.segprocessor.df.at[i, "Image"] = resample_img_mapper.loc[
                             resample_img_mapper["File"] == os.path.basename(row["Image"])[
-                                                            :-len(".nii.gz")], "Path"].values[0]
+                                                           :-len(".nii.gz")], "Path"].values[0]
                         self.segprocessor.df.at[i, "Mask"] = resample_msk_mapper.loc[
                             resample_msk_mapper["File"] == os.path.basename(row["Mask"])[
-                                                            :-len(".nii.gz")], "Path"].values[0]
+                                                           :-len(".nii.gz")], "Path"].values[0]
 
     def process_resampling(self):
         """
@@ -2917,38 +2947,43 @@ class Normalization_processing(SegProcessor):
             self.segprocessor.logger.info("Replace original Images with normalized Images!")
             # drop all non-normalized images
             # check for non-normalized images
-            non_transformed_img = self.segprocessor.df.copy().loc[~self.segprocessor.df["Image"].str.contains("normalized"),"Image"].unique() # Get unique 'Image' values from non normalized
+            non_transformed_img = self.segprocessor.df.copy().loc[~self.segprocessor.df["Image"].str.contains(
+                "normalized"), "Image"].unique()  # Get unique 'Image' values from non normalized
             # drop non normalized images
-            self.segprocessor.df = self.segprocessor.df.copy().loc[~self.segprocessor.df['Image'].isin(non_transformed_img)]
+            self.segprocessor.df = self.segprocessor.df.copy().loc[
+                ~self.segprocessor.df['Image'].isin(non_transformed_img)]
             del non_transformed_img
 
             if "N4BF_normalized" in self.segprocessor.df["Image_Transformation"].values:
-                self.segprocessor.df[self.segprocessor.df["Image_Transformation"] == "N4BF_normalized"]['Image_Transformation'] = np.nan
+                self.segprocessor.df[self.segprocessor.df["Image_Transformation"] == "N4BF_normalized"][
+                    'Image_Transformation'] = np.nan
 
             elif "Z-score_normalized" in self.segprocessor.df["Image_Transformation"].values:
-                self.segprocessor.df[self.segprocessor.df["Image_Transformation"] == "Z-score_normalized"]['Image_Transformation'] = np.nan
+                self.segprocessor.df[self.segprocessor.df["Image_Transformation"] == "Z-score_normalized"][
+                    'Image_Transformation'] = np.nan
 
             else:
                 self.segprocessor.error.error("No Normalized Images found in CSV! Normalization Failed!")
                 raise ValueError("No Normalized Images found in CSV! Normalization Failed!")
 
             # Check if there are raw samples with only Normalization and no Mask Transformation
-            raw_samples = self.segprocessor.df.copy().loc[self.segprocessor.df["Image"].isnull() & self.segprocessor.df["Mask"].isnull()]
-            
+            raw_samples = self.segprocessor.df.copy().loc[
+                self.segprocessor.df["Image"].isnull() & self.segprocessor.df["Mask"].isnull()]
+
             # check in folder multi_label_seg for the correct segmentations
             preprocessed_masks = glob.glob(self.segprocessor.out_path + "/multilabel_seg/*.nii.gz")
             # check in normalize folder for correct images (if resampling is enabled it has been applied to the images already)
-            normalized_images =  glob.glob(self.segprocessor.out_path + "/normalized/*.nii.gz")
+            normalized_images = glob.glob(self.segprocessor.out_path + "/normalized/*.nii.gz")
 
             normalized_img_dict = {
-                    os.path.basename(image).replace(".nii.gz", ""): image
-                    for image in normalized_images
-                }
-            
+                os.path.basename(image).replace(".nii.gz", ""): image
+                for image in normalized_images
+            }
+
             preprocessed_mask_dict = {
-                    os.path.basename(mask).replace(".nii.gz", ""): mask
-                    for mask in preprocessed_masks
-                }
+                os.path.basename(mask).replace(".nii.gz", ""): mask
+                for mask in preprocessed_masks
+            }
 
             non_normalized_images_exist = self.segprocessor.df.copy()['Image'].str.contains('normalized').any() == False
 
@@ -2957,7 +2992,8 @@ class Normalization_processing(SegProcessor):
                 print("Detected Images that are not normalized. Trying to replace ... ")
                 self.segprocessor.error.warning("Detected Images that are not normalized. Trying to replace ... ")
 
-                for i, row in tqdm.tqdm(self.segprocessor.df.copy().iterrows(), total=len(self.segprocessor.df), desc="Integrate missing normalized images"):
+                for i, row in tqdm.tqdm(self.segprocessor.df.copy().iterrows(), total=len(self.segprocessor.df),
+                                        desc="Integrate missing normalized images"):
                     if "normalized" not in row["Image"]:
                         if row["Image_Transformation"].isnull():
                             # Extract the non-normalized base name (without the extension)
@@ -2965,7 +3001,8 @@ class Normalization_processing(SegProcessor):
 
                             # Find the corresponding normalized image path by matching the prefix
                             matched_normalized = next(
-                                (norm_path for norm_prefix, norm_path in normalized_img_dict.items() if norm_prefix.startswith(non_normalized_base)),
+                                (norm_path for norm_prefix, norm_path in normalized_img_dict.items() if
+                                 norm_prefix.startswith(non_normalized_base)),
                                 None
                             )
 
@@ -2973,16 +3010,22 @@ class Normalization_processing(SegProcessor):
                             if not matched_normalized is None:
                                 self.segprocessor.df.at[i, 'Image'] = matched_normalized
                             else:
-                                print("Could not find normalized Images for", non_normalized_base, ". Check file naming or errors during normalization.")
-                                self.segprocessor.error.error("Could not find normalized Images for", non_normalized_base, ". Check file naming or errors during normalization.")
+                                print("Could not find normalized Images for", non_normalized_base,
+                                      ". Check file naming or errors during normalization.")
+                                self.segprocessor.error.error("Could not find normalized Images for",
+                                                              non_normalized_base,
+                                                              ". Check file naming or errors during normalization.")
                         else:
-                            print("Not normalized transformed Image detected! need to redo transformation and remove image ...")
-                            self.segprocessor.error.error("Not normalized transformed Image detected! need to redo transformation and remove image ...")
-                            raise ValueError("Not normalized transformed Image detected! need to redo transformation and remove image ...")
+                            print(
+                                "Not normalized transformed Image detected! need to redo transformation and remove image ...")
+                            self.segprocessor.error.error(
+                                "Not normalized transformed Image detected! need to redo transformation and remove image ...")
+                            raise ValueError(
+                                "Not normalized transformed Image detected! need to redo transformation and remove image ...")
                             # Drop rows where the 'Image' column matches the current image path
-                            #self.segprocessor.df = self.segprocessor.df[self.segprocessor.df["Image"] != row["Image"]]
+                            # self.segprocessor.df = self.segprocessor.df[self.segprocessor.df["Image"] != row["Image"]]
                             # Delete the image file if it exists
-                            #if os.path.exists(row["Image"]):
+                            # if os.path.exists(row["Image"]):
                             #    os.remove(row["Image"])
                             #    print(f"Deleted image file: {row["Image"]}")
                             #    self.error.warning(f"Deleted image file: {row["Image"]}")
@@ -2996,15 +3039,17 @@ class Normalization_processing(SegProcessor):
                 print("Could not find any non-transformed sample in the dataset. Trying to add them ...")
 
                 updated_rows = []
-                for i,row in  tqdm.tqdm(self.segprocessor.df.copy().iterrows(),total=len(self.segprocessor.df), desc="Add missing non-transformed samples"):
+                for i, row in tqdm.tqdm(self.segprocessor.df.copy().iterrows(), total=len(self.segprocessor.df),
+                                        desc="Add missing non-transformed samples"):
                     if row["Mask_Transformation"] == "Peritumoral":
                         mask_name = os.path.basename(mask_path)[:-len("_3_peritumoral.nii.gz")]
-                         # Find the corresponding normalized image path by matching the prefix
+                        # Find the corresponding normalized image path by matching the prefix
                         matched_preprocessed_mask = next(
-                            (preprocessed_path for preprocessed_prefix, preprocessed_path in preprocessed_mask_dict.items() 
-                            if preprocessed_prefix.startswith(mask_name)),
+                            (preprocessed_path for preprocessed_prefix, preprocessed_path in
+                             preprocessed_mask_dict.items()
+                             if preprocessed_prefix.startswith(mask_name)),
                             None
-                            )
+                        )
                         if not matched_preprocessed_mask is None:
                             new_row = row.copy()
                             new_row["Mask"] = matched_preprocessed_mask
@@ -3018,12 +3063,13 @@ class Normalization_processing(SegProcessor):
 
                                 # Find the corresponding normalized image path by matching the prefix
                                 matched_normalized = next(
-                                    (norm_path for norm_prefix, norm_path in normalized_img_dict.items() if norm_prefix.startswith(non_normalized_base)),
+                                    (norm_path for norm_prefix, norm_path in normalized_img_dict.items() if
+                                     norm_prefix.startswith(non_normalized_base)),
                                     None
                                 )
                                 new_row['Image'] = matched_normalized
                             updated_rows.append((i, new_row))
-                
+
                 # Create a DataFrame from the updated rows, keeping the same index
                 non_transformed_df = pd.DataFrame([row for _, row in updated_rows])
                 non_transformed_df.index = [index for index, _ in updated_rows]
@@ -3034,23 +3080,23 @@ class Normalization_processing(SegProcessor):
                 self.segprocessor.df = pd.concat([self.segprocessor.df, non_transformed_df], ignore_index=False)
                 del non_transformed_df
 
-
                 # Remove duplicate rows based on 'Image' and 'Mask' columns
-                self.segprocessor.df = self.segprocessor.df.drop_duplicates(subset=['Image', 'Mask'], keep='last')  
-                
-                for i,row in self.segprocessor.df.copy().iterrows():
+                self.segprocessor.df = self.segprocessor.df.drop_duplicates(subset=['Image', 'Mask'], keep='last')
+
+                for i, row in self.segprocessor.df.copy().iterrows():
                     # check for non preprocessed masks and replace them if possible
                     if pd.isnull(row["Mask_Transformation"]):
                         # Check if the mask path contains 'resampled'
                         if 'resampled' in os.path.basename(row['Mask']):
-                            mask_path =  row['Mask']
+                            mask_path = row['Mask']
                             # Extract the base name of the resampled mask (without the extension)
                             resampled_base = os.path.basename(mask_path).replace(".nii.gz", "")
 
                             # Find the corresponding preprocessed mask by matching the prefix
                             matched_preprocessed_mask = next(
-                                (preprocessed_path for preprocessed_prefix, preprocessed_path in preprocessed_mask_dict.items() 
-                                if preprocessed_prefix.startswith(resampled_base)),
+                                (preprocessed_path for preprocessed_prefix, preprocessed_path in
+                                 preprocessed_mask_dict.items()
+                                 if preprocessed_prefix.startswith(resampled_base)),
                                 None
                             )
 
@@ -3058,18 +3104,20 @@ class Normalization_processing(SegProcessor):
                             if matched_preprocessed_mask:
                                 self.segprocessor.df.at[i, 'Mask'] = matched_preprocessed_mask
             else:
-                for i,row in  tqdm.tqdm(self.segprocessor.df.copy().iterrows(),total=len(self.segprocessor.df), desc="check for preprocessed masks"):
-                    if  pd.isnull(row["Mask_Transformation"]):
+                for i, row in tqdm.tqdm(self.segprocessor.df.copy().iterrows(), total=len(self.segprocessor.df),
+                                        desc="check for preprocessed masks"):
+                    if pd.isnull(row["Mask_Transformation"]):
                         # Check if the mask path contains '/resampled/'
                         if 'resampled' in os.path.basename(row['Mask']):
-                            mask_path =  row['Mask']
+                            mask_path = row['Mask']
                             # Extract the base name of the resampled mask (without the extension)
                             resampled_base = os.path.basename(mask_path).replace(".nii.gz", "")
 
                             # Find the corresponding preprocessed mask by matching the prefix
                             matched_preprocessed_mask = next(
-                                (preprocessed_path for preprocessed_prefix, preprocessed_path in preprocessed_mask_dict.items() 
-                                if preprocessed_prefix.startswith(resampled_base)),
+                                (preprocessed_path for preprocessed_prefix, preprocessed_path in
+                                 preprocessed_mask_dict.items()
+                                 if preprocessed_prefix.startswith(resampled_base)),
                                 None
                             )
 
@@ -3081,7 +3129,6 @@ class Normalization_processing(SegProcessor):
 
                 # add samples without image transformation to these data and get prediction label from data for new entry
 
-
             # else:
             #    self.logger.info("No MRI found for normalization! Check modality or disable normalization. Skipping ...")
 
@@ -3091,7 +3138,7 @@ class Seg_filter_processing(SegProcessor):
         This class is used to filter the segmentation content based on the following criteria:
     """
 
-    def __init__(self,segprocessor):
+    def __init__(self, segprocessor):
 
         self.segprocessor = segprocessor
         self.fast_mode = self.segprocessor.fast_mode
@@ -3113,7 +3160,7 @@ class Seg_filter_processing(SegProcessor):
         removed = 0
         # TODO: currently not checking as it might be not correct
         # Process files using multiple CPUs
-        #with Pool(processes=self.segprocessor.n_cpu) as pool:
+        # with Pool(processes=self.segprocessor.n_cpu) as pool:
         #    # Use tqdm with imap to show progress
         #    for result in tqdm.tqdm(pool.imap(self.is_valid_segmentation, segmentation_paths),
         #                            total=len(segmentation_paths), desc="Segmentation Quality Check"):
@@ -3148,7 +3195,8 @@ class Seg_filter_processing(SegProcessor):
 
             return True, segmentation
         else:
-            self.segprocessor.error.error(f"Segmentation {os.path.basename(segmentation)} has size of {str(np.sum(seg_object == 1))} which is smaller than min size threshold {str(self.segprocessor.roi_threshold)}.")
+            self.segprocessor.error.error(
+                f"Segmentation {os.path.basename(segmentation)} has size of {str(np.sum(seg_object == 1))} which is smaller than min size threshold {str(self.segprocessor.roi_threshold)}.")
             return False, segmentation
 
     def load_segmentation(self, segmentation_path: str):
@@ -3203,7 +3251,7 @@ class Seg_filter_processing(SegProcessor):
             for done_msk in filtered_segmentations:
                 # done_msks_pattern = os.path.basename(done_msk)[:-(len("_roiL_0_roiT_3_roiN_1.nii.gz"))]
                 done_msk_file = os.path.basename(done_msk)
-                if done_msk_file.startswith(msk_pattern): # msk_pattern == done_msks_pattern:
+                if done_msk_file.startswith(msk_pattern):  # msk_pattern == done_msks_pattern:
                     self.segprocessor.df.loc[self.segprocessor.df["Mask"] == msk, "Mask"] = os.path.abspath(done_msk)
                     to_process.drop(to_process[to_process["Mask"] == msk].index, inplace=True)
                     break
@@ -3266,7 +3314,7 @@ class Segmentation_perturbation_processing(SegProcessor):
                                                                 file_ending="_closed.nii.gz")
                 acc_pert_num += accepted
                 non_acc_pert_num += not_accepted
-                
+
             # Convex Hull Expansion
             elif pert_path.endswith("_convex.nii.gz"):
                 # Calc Dice for postprocessed convex segmentation
@@ -3311,10 +3359,12 @@ class Segmentation_perturbation_processing(SegProcessor):
                 try:
                     dice_value = float(match.group(1))  # Convert extracted string to float
                     if self.dice_threshold <= dice_value < 0.99:
-                        self.logger.info(f"Dice score {dice_value} is within the accepted range. {os.path.basename(pert_path)}")
+                        self.logger.info(
+                            f"Dice score {dice_value} is within the accepted range. {os.path.basename(pert_path)}")
                         acc_pert_num += 1
                     else:
-                        self.logger.info(f"Dice score {dice_value} is OUT of the accepted range. {os.path.basename(pert_path)}")
+                        self.logger.info(
+                            f"Dice score {dice_value} is OUT of the accepted range. {os.path.basename(pert_path)}")
                         non_acc_pert_num += 1
                 except:
                     self.error.warning(f"Could not find Dice score in file name! {os.path.basename(pert_path)}")
@@ -3322,7 +3372,6 @@ class Segmentation_perturbation_processing(SegProcessor):
                 self.error.warning("No Dice score found in the filename.")
 
         return acc_pert_num, non_acc_pert_num
-
 
     def process_connected_component_expansion(self):
         """
@@ -3418,7 +3467,8 @@ class Segmentation_perturbation_processing(SegProcessor):
 
         peritumoral_segs = glob.glob(self.segprocessor.peritumor_seg_dir + "/*_peritumoral.nii.gz")
 
-        for msk in tqdm.tqdm(self.segprocessor.df["Mask"].values, total=len(self.segprocessor.df["Mask"]), desc="Loading Surrounding segmentations"):
+        for msk in tqdm.tqdm(self.segprocessor.df["Mask"].values, total=len(self.segprocessor.df["Mask"]),
+                             desc="Loading Surrounding segmentations"):
             for pseg in peritumoral_segs:
                 dist = re.findall(r'_([0-9]*[.]*[0-9]*)_peritumoral.nii.gz', os.path.basename(pseg))
                 psegid = os.path.basename(pseg)[:-(len("_" + str(dist[0]) + "_peritumoral.nii.gz"))]
@@ -3554,8 +3604,8 @@ class Segmentation_perturbation_processing(SegProcessor):
             performed_correction_closing = random_performed_correction_closing + morph_performed_correction_closing
 
             performing_correction_closing = self.performed_perturbations(list_of_out_files=performed_correction_closing,
-                                                                        list_of_input_files=input_files,
-                                                                        file_ending="_closed.nii.gz")
+                                                                         list_of_input_files=input_files,
+                                                                         file_ending="_closed.nii.gz")
 
             if len(performing_correction_closing) > 0:
                 print("Need to perform correction closing on:", len(performing_correction_closing), "files")
@@ -3583,10 +3633,10 @@ class Segmentation_perturbation_processing(SegProcessor):
             performed_correction_convex_hull = random_performed_correction_convex_hull + morph_performed_correction_convex_hull
 
             performing_correction_convex_hull = self.performed_perturbations(
-                                                                        list_of_out_files=performed_correction_convex_hull,
-                                                                        list_of_input_files=input_files,
-                                                                        file_ending="_convex.nii.gz")
-            
+                list_of_out_files=performed_correction_convex_hull,
+                list_of_input_files=input_files,
+                file_ending="_convex.nii.gz")
+
             if len(performing_correction_convex_hull) > 0:
                 print("Need to perform correction convex hull on:", len(performing_correction_convex_hull), "files")
 
@@ -3595,7 +3645,7 @@ class Segmentation_perturbation_processing(SegProcessor):
 
                 # Apply the process function to each item in the list
                 with tqdm.tqdm(total=len(performing_correction_convex_hull),
-                            desc="Performing Convex Hull Correction") as pbar:
+                               desc="Performing Convex Hull Correction") as pbar:
                     for _ in pool.imap_unordered(self.segmentation_convex_hull, performing_correction_convex_hull):
                         pbar.update(1)
 
@@ -3691,15 +3741,15 @@ class Segmentation_perturbation_processing(SegProcessor):
         print("Found Perturbations in dataframe: ", len(accepted_perturbations_in_data["Mask"].unique().tolist()))
 
         if len(accepted_perturbations_in_data["Mask"].unique().tolist()) == len(accepted_pertubations) and len(
-                accepted_pertubations) > 0:
+            accepted_pertubations) > 0:
             print("All accepted perturbations are already in the data:", len(accepted_perturbations_in_data))
             self.segprocessor.logger.info(
                 "All accepted perturbations are already in the data:" + str(len(accepted_perturbations_in_data)))
         else:
             # check if the total number of perturbed segmentations is the same between the csv file and the number of files in the folder
             for msk in tqdm.tqdm(
-                    self.segprocessor.df.loc[self.segprocessor.df["Mask_Transformation"].isnull(), "Mask"].values,
-                    desc="Gathering accepted perturbations"):
+                self.segprocessor.df.loc[self.segprocessor.df["Mask_Transformation"].isnull(), "Mask"].values,
+                desc="Gathering accepted perturbations"):
                 for acc in acc_pert_list:
                     if os.path.basename(msk)[:-len(".nii.gz")] in os.path.basename(acc):
                         # Super_Voxel_Randomization Perturbation
@@ -4112,7 +4162,6 @@ class Segmentation_perturbation_processing(SegProcessor):
         accepted_perturbed_segs = glob.glob(out_acc_seg + "/*.nii.gz")
         accepted_num = len(accepted_perturbed_segs)
 
-
         return accepted_perturbed_segs, accepted_num
 
     def get_not_accepted_perturbed_segs(self):
@@ -4185,7 +4234,8 @@ class Segmentation_perturbation_processing(SegProcessor):
 
         return performing
 
-    def calc_dice4control(self, perturbed_seg: str, file_ending: str):  # calculated_dice_pert: list, seg_path: str, file_ending: str):
+    def calc_dice4control(self, perturbed_seg: str,
+                          file_ending: str):  # calculated_dice_pert: list, seg_path: str, file_ending: str):
         """
         Calculated Dice and copies file if dice is above self.dice_threshold to accepted dice folder if not to non accepted dice folder
         :param perturbed_seg: path to perturbed segmentation
@@ -4436,7 +4486,7 @@ class Segmentation_perturbation_processing(SegProcessor):
             self.process_connected_component_expansion()
 
         # 2. surround segmentations - > handled extra
-        #if self.segprocessor.peritumoral_seg:
+        # if self.segprocessor.peritumoral_seg:
         #    self.process_surround_segmentation()
 
         # 3. SuperVoxel based perturbation
@@ -4499,10 +4549,6 @@ class Image_Transformation_processing(SegProcessor):
                                           "Prediction_Label": [r["Prediction_Label"]]
                                           })
 
-
-
-
-
                     added += 1
                     ext_df = pd.concat([ext_df, entry], ignore_index=True)
                     # Add all mask transformations from this image to the DataFrame
@@ -4534,7 +4580,7 @@ class Image_Transformation_processing(SegProcessor):
 
         return ext_df, added
 
-    def get_transformer(self, trans_to_process:dict):
+    def get_transformer(self, trans_to_process: dict):
         """
         Get Transformation object
         :param trans_to_process (dict): tranformation kernel: [original_img_paths]
@@ -4564,8 +4610,9 @@ class Image_Transformation_processing(SegProcessor):
         Returns:
             dict: A dictionary where keys are missing kernel categories and values are lists of corresponding image paths.
         """
-        
-        df = pd.read_csv(self.segprocessor.out_path + "/" + self.segprocessor.RunID + "_preprocessing_out.csv", index_col=0)
+
+        df = pd.read_csv(self.segprocessor.out_path + "/" + self.segprocessor.RunID + "_preprocessing_out.csv",
+                         index_col=0)
 
         if "ID" != df.index.name:
             if "ID" not in df.columns:
@@ -4583,7 +4630,7 @@ class Image_Transformation_processing(SegProcessor):
         transformed_samples_count = {}
         for i in df['Image_Transformation'].value_counts().keys():
             transformed_samples_count[i] = df['Image_Transformation'].value_counts()[i]
-            
+
         transformed_samples = {}
         for i, r in df.copy().loc[~df["Image_Transformation"].isnull()].iterrows():
             if r['Image_Transformation'] in transformed_samples:
@@ -4611,7 +4658,7 @@ class Image_Transformation_processing(SegProcessor):
                         print(f"Could not find any matching kernel for image transformations {kernel}!")
 
         return need_to_process_transformed_samples
-    
+
     def extract_kernel_info(self, filename: str, kernel_dict: dict) -> str:
         """
         Extract the kernel name and configuration from the filename based on predefined patterns.
@@ -4644,20 +4691,22 @@ class Image_Transformation_processing(SegProcessor):
         """
         transformed_image, transformed_images_folder, df = args
         image_id = transformed_image.split("_")[0]  # Extract ID from filename
-        
+
         # Find all existing mask transformations for this ID (excluding Peritumoral masks)
-        existing_transformations = df[(df['ID'] == image_id) & (~df['Mask_Transformation'].str.contains("Peritumoral", na=False))]
-        
+        existing_transformations = df[
+            (df['ID'] == image_id) & (~df['Mask_Transformation'].str.contains("Peritumoral", na=False))]
+
         new_rows = []
         for _, row in existing_transformations.iterrows():
-            transformed_exists = ((df['ID'] == image_id) & 
-                                (df['Image'] == os.path.join(transformed_images_folder, transformed_image)) & 
-                                (df['Mask_Transformation'] == row['Mask_Transformation'])).any()
-            
+            transformed_exists = ((df['ID'] == image_id) &
+                                  (df['Image'] == os.path.join(transformed_images_folder, transformed_image)) &
+                                  (df['Mask_Transformation'] == row['Mask_Transformation'])).any()
+
             if not transformed_exists:
                 new_row = row.copy()
                 new_row['Image'] = os.path.join(transformed_images_folder, transformed_image)
-                new_row['Image_Transformation'] = self.extract_kernel_info(transformed_image, self.segprocessor.kernels_in_files_dict)
+                new_row['Image_Transformation'] = self.extract_kernel_info(transformed_image,
+                                                                           self.segprocessor.kernels_in_files_dict)
                 new_rows.append(new_row)
 
         return new_rows
@@ -4675,33 +4724,33 @@ class Image_Transformation_processing(SegProcessor):
         """
         # Load existing CSV file
         df = pd.read_csv(csv_file)
-        
+
         # List all transformed images in the folder
         transformed_images = [f for f in os.listdir(transformed_images_folder) if f.endswith(".nii.gz")]
-        
+
         # Use multiprocessing to speed up processing
         pool = Pool(self.segprocessor.n_cpu)
         results = []
-        
+
         with tqdm.tqdm(total=len(transformed_images), desc="Transformed Image Quality Check") as pbar:
-            for result in pool.imap_unordered(self.process_transformed_image, [(img, transformed_images_folder, df) for img in transformed_images]):
+            for result in pool.imap_unordered(self.process_transformed_image,
+                                              [(img, transformed_images_folder, df) for img in transformed_images]):
                 results.extend(result)
                 pbar.update(1)
-        
+
         pool.close()
         pool.join()
-        
+
         # Convert results to DataFrame and concatenate
         new_df = pd.DataFrame(results)
         df = pd.concat([df, new_df], ignore_index=True)
-        
+
         # Remove duplicate rows based on Mask and Image columns
         df = df.drop_duplicates(subset=["Mask", "Image"], keep="first")
-        
+
         # Save the updated CSV
         # df.to_csv("updated_data.csv", index=False)
         return df
-
 
     # 5. Image Transformations
     def process_image_transformation(self):
@@ -4714,7 +4763,8 @@ class Image_Transformation_processing(SegProcessor):
         transformer = self.get_transformer(trans_to_process=self.segprocessor.trans_to_process)
         transformer.run()
 
-        df = pd.read_csv(self.segprocessor.out_path + "/" + self.segprocessor.RunID + "_preprocessing_out.csv", index_col=0)
+        df = pd.read_csv(self.segprocessor.out_path + "/" + self.segprocessor.RunID + "_preprocessing_out.csv",
+                         index_col=0)
 
         if "ID" != df.index.name:
             if "ID" in df.columns:
@@ -4732,7 +4782,7 @@ class Image_Transformation_processing(SegProcessor):
         transformed_samples_count = {}
         for i in df['Image_Transformation'].value_counts().keys():
             transformed_samples_count[i] = df['Image_Transformation'].value_counts()[i]
-            
+
         transformed_samples = {}
         for i, r in df.copy().loc[~df["Image_Transformation"].isnull()].iterrows():
             if r['Image_Transformation'] in transformed_samples:
@@ -4743,12 +4793,14 @@ class Image_Transformation_processing(SegProcessor):
         need_to_process_transformed_samples_count = {}
         for kernel in transformed_samples_count:
             if transformed_samples_count[kernel] != raw_samples_count:
-                print(f"Need to transform {raw_samples_count-transformed_samples_count[kernel]} samples with kernel {kernel}.")
-                need_to_process_transformed_samples_count[kernel] = raw_samples_count-transformed_samples_count[kernel]  
+                print(
+                    f"Need to transform {raw_samples_count - transformed_samples_count[kernel]} samples with kernel {kernel}.")
+                need_to_process_transformed_samples_count[kernel] = raw_samples_count - transformed_samples_count[
+                    kernel]
 
-        # double check if all images are transformed
+                # double check if all images are transformed
         trans_to_process_dict = self.get_missing_kernel_images(self.segprocessor.transform_exe.kernels_in_files.keys())
-        
+
         if len(trans_to_process_dict.values()) > 0:
             transformer = self.get_transformer(trans_to_process=trans_to_process_dict)
             transformer.run()
@@ -4801,11 +4853,13 @@ class Image_Transformation_processing(SegProcessor):
                 index=False)
             del result
 
-        results = self.update_csv_with_transformed_images(self.segprocessor.out_path + "/" + self.segprocessor.RunID + "_preprocessing_out.csv", 
-                                                self.segprocessor.out_path + "/transformed_images/")
+        results = self.update_csv_with_transformed_images(
+            self.segprocessor.out_path + "/" + self.segprocessor.RunID + "_preprocessing_out.csv",
+            self.segprocessor.out_path + "/transformed_images/")
 
         self.segprocessor.df = results.copy()
-        self.segprocessor.df.to_csv(self.segprocessor.out_path + "/" + self.segprocessor.RunID + "_preprocessing_out.csv", index=False)
+        self.segprocessor.df.to_csv(
+            self.segprocessor.out_path + "/" + self.segprocessor.RunID + "_preprocessing_out.csv", index=False)
 
         self.segprocessor.logger.info("#### Image Transformation Done!")
         print("Image Transformation Done!")
@@ -4824,7 +4878,9 @@ class Image_Transformation_processing(SegProcessor):
                     config = re.search(transformation + "([-0-9A-Za-z-_.]*).nii.gz", os.path.basename(file)).group(1)
                     transform_config = self.segprocessor.kernels_in_files_dict[transformation] + config
                 except AttributeError:
-                    self.segprocessor.error.warning("Could not find {} Transformation configuration of {}".format(transformation, os.path.basename(file)))
+                    self.segprocessor.error.warning(
+                        "Could not find {} Transformation configuration of {}".format(transformation,
+                                                                                      os.path.basename(file)))
                     transform_config = self.segprocessor.kernels_in_files_dict[transformation]
 
         return transform_config

@@ -7,8 +7,8 @@ import os
 import time
 from typing import Union
 
-from rptk.src.config.Log_generator_config import LogGenerator
-from rptk.src.feature_filtering.Feature_formater import FeatureFormatter
+from  src.config.Log_generator_config import LogGenerator
+from  src.feature_filtering.Feature_formater import FeatureFormatter
 
 class IBSIFeatureFormater:
     """

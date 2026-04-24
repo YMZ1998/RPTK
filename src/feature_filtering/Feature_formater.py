@@ -1,10 +1,11 @@
-import pandas as pd
-import numpy as np
 import logging
+
+import numpy as np
+import pandas as pd
 import tqdm
 from matplotlib import pyplot as plt
 
-from rptk.src.config.Log_generator_config import LogGenerator
+from src.config.Log_generator_config import LogGenerator
 
 
 class FeatureFormatter:
@@ -23,8 +24,8 @@ class FeatureFormatter:
                  additional_ROIs: list = [],  # list of stings containing names of the ROIs in the feature names
                  generate_feature_profile_plot: bool = True,
                  RunID: str = "RPTK",
-                 non_RPTK_format:bool = False,
-                 no_clinical_included:bool = True):
+                 non_RPTK_format: bool = False,
+                 no_clinical_included: bool = True):
 
         self.format_columns = ["ID",
                                "Image",
@@ -109,7 +110,7 @@ class FeatureFormatter:
                                 "separable",
                                 "mean",
                                 "log"]
-            
+
         self.logger = logger
         self.features = features
         self.kernels_in_files = kernels_in_files
@@ -137,7 +138,7 @@ class FeatureFormatter:
         if self.features is None:
             self.error.error("No Features provided for profiling!")
             raise ValueError("No Features provided for profiling!")
-        
+
         self.mirp_feature_class_IDs = ["morphological",
                                        "local_intensity",
                                        "intensity-based_statistics",
@@ -152,20 +153,19 @@ class FeatureFormatter:
                                        "diagnostic"]
 
         self.pyradiomics_feature_class_IDs = ["diagnostics",
-                                        "morphological",
-                                        "firstorder",
-                                        "grey_level_co-occurrence_matrix",
-                                        "grey_level_distance_zone_matrix",
-                                        "grey_level_run_length_matrix",
-                                        "grey_level_size_zone_matrix",
-                                        "neighbourhood_grey_tone_difference_matrix",
-                                        ]
+                                              "morphological",
+                                              "firstorder",
+                                              "grey_level_co-occurrence_matrix",
+                                              "grey_level_distance_zone_matrix",
+                                              "grey_level_run_length_matrix",
+                                              "grey_level_size_zone_matrix",
+                                              "neighbourhood_grey_tone_difference_matrix",
+                                              ]
 
         self.py_feature_class_ID = []
 
-    
     def get_feature_class(self):
-        
+
         if self.extractor == "MIRP":
             return self.mirp_feature_class_IDs
         elif self.extractore == "PyRadiomics":
@@ -255,19 +255,19 @@ class FeatureFormatter:
             grey_level_co_occurrence_matrix = ["Autocorrelation",
                                                "ClusterProminence",
                                                "ClusterShade",
-                                                "ClusterTendency",
-                                                "Contrast",
-                                                "Correlation",
-                                                "DifferenceAverage",
-                                                "DifferenceEntropy",
-                                                "DifferenceVariance",
-                                                "Id",
-                                                "Idm",
-                                                "Idmn",
-                                                "Idn",
-                                                "Imc1",
-                                                "Imc2",
-                                                "InverseVariance",
+                                               "ClusterTendency",
+                                               "Contrast",
+                                               "Correlation",
+                                               "DifferenceAverage",
+                                               "DifferenceEntropy",
+                                               "DifferenceVariance",
+                                               "Id",
+                                               "Idm",
+                                               "Idmn",
+                                               "Idn",
+                                               "Imc1",
+                                               "Imc2",
+                                               "InverseVariance",
                                                "JointAverage",
                                                "JointEnergy",
                                                "JointEntropy",
@@ -301,24 +301,24 @@ class FeatureFormatter:
 
         elif feature_class == "grey_level_size_zone_matrix":
             grey_level_size_zone_matrix = ["GrayLevelNonUniformity",
-                                            "GrayLevelNonUniformityNormalized",
-                                             "GrayLevelVariance",
-                                             "HighGrayLevelZoneEmphasis",
-                                             "LargeAreaEmphasis",
-                                             "LargeAreaHighGrayLevelEmphasis",
-                                             "LargeAreaLowGrayLevelEmphasis",
-                                             "LowGrayLevelZoneEmphasis",
-                                             "SizeNonUniformity",
-                                             "SizeNonUniformityNormalized",
-                                             "SizeZoneNonUniformityNormalized",
-                                             "SizeZoneNonUniformity",
-                                             "SizeVariance",
-                                             "SmallAreaEmphasis",
-                                             "SmallAreaHighGrayLevelEmphasis",
-                                             "SmallAreaLowGrayLevelEmphasis",
-                                             "ZoneEntropy",
-                                             "ZonePercentage",
-                                             "ZoneVariance"]
+                                           "GrayLevelNonUniformityNormalized",
+                                           "GrayLevelVariance",
+                                           "HighGrayLevelZoneEmphasis",
+                                           "LargeAreaEmphasis",
+                                           "LargeAreaHighGrayLevelEmphasis",
+                                           "LargeAreaLowGrayLevelEmphasis",
+                                           "LowGrayLevelZoneEmphasis",
+                                           "SizeNonUniformity",
+                                           "SizeNonUniformityNormalized",
+                                           "SizeZoneNonUniformityNormalized",
+                                           "SizeZoneNonUniformity",
+                                           "SizeVariance",
+                                           "SmallAreaEmphasis",
+                                           "SmallAreaHighGrayLevelEmphasis",
+                                           "SmallAreaLowGrayLevelEmphasis",
+                                           "ZoneEntropy",
+                                           "ZonePercentage",
+                                           "ZoneVariance"]
 
             return grey_level_size_zone_matrix
 
@@ -359,16 +359,16 @@ class FeatureFormatter:
         morph = []
         loc = []
         stat = []
-        #ivh = []
-        #ih = []
+        # ivh = []
+        # ih = []
         gcm = []
         grlm = []
         gszm = []
         gdzm = []
         ngt = []
-        #ngl = []
-        #diag = []
-        #img_data = []
+        # ngl = []
+        # diag = []
+        # img_data = []
 
         tmp = pd.DataFrame()
         feature_format = pd.DataFrame()
@@ -395,8 +395,8 @@ class FeatureFormatter:
                         self.logger.info(f"Feature {col} does not follow feature format ...")
                         splitted_ID = col.split("_")
                         tmp = self.get_feature_format(feature_class="Clinical_feature",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                      splitted_feature_str=splitted_ID,
+                                                      feature_name=col)
 
                         feature_format = pd.concat([feature_format, tmp], ignore_index=True)
                         continue
@@ -405,69 +405,72 @@ class FeatureFormatter:
                     morph.append(splitted_ID[2:])
 
                     tmp = self.get_feature_format(feature_class="morphological",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "original" and splitted_ID[1].startswith("firstorder"):  # local intensity
                     loc.append(splitted_ID[2:])
                     tmp = self.get_feature_format(feature_class="firstorder",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "diagnostics":  # intensity-based statistics
                     stat.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="diagnostics",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
 
 
-                elif splitted_ID[0] == "original" and splitted_ID[1].startswith("glcm"):  # grey level co-occurrence matrix
+                elif splitted_ID[0] == "original" and splitted_ID[1].startswith(
+                    "glcm"):  # grey level co-occurrence matrix
                     gcm.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="grey_level_co-occurrence_matrix",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
-                elif splitted_ID[0] == "original" and splitted_ID[1].startswith("glrlm"):  # grey level run length matrix
+                elif splitted_ID[0] == "original" and splitted_ID[1].startswith(
+                    "glrlm"):  # grey level run length matrix
                     grlm.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="grey_level_run_length_matrix",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "original" and splitted_ID[1].startswith("glszm"):  # grey level size zone matrix
                     gszm.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="grey_level_size_zone_matrix",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
-                    
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
-                elif splitted_ID[0] == "original" and splitted_ID[1].startswith("gldm"):  # grey level distance zone matrix
+                elif splitted_ID[0] == "original" and splitted_ID[1].startswith(
+                    "gldm"):  # grey level distance zone matrix
                     gdzm.append(splitted_ID[1:])
 
                     tmp = self.get_feature_format(feature_class="grey_level_distance_zone_matrix",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
-                elif splitted_ID[0] == "original" and splitted_ID[1].startswith("ngtdm"):  # neighbourhood grey tone difference matrix
+                elif splitted_ID[0] == "original" and splitted_ID[1].startswith(
+                    "ngtdm"):  # neighbourhood grey tone difference matrix
                     ngt.append(splitted_ID[1:])
 
                     tmp = self.get_feature_format(feature_class="neighbourhood_grey_tone_difference_matrix",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
@@ -482,9 +485,11 @@ class FeatureFormatter:
                     if self.no_clinical_included:
                         if not format:
                             if splitted_ID[0] != "index":
-                                self.error.warning("Unknown feature class sorting as first class feature: " + splitted_ID[0] +
-                                                " " + col)
-                                print("Unknown feature class sorting as first class feature: " + splitted_ID[0] + " " + col)
+                                self.error.warning(
+                                    "Unknown feature class sorting as first class feature: " + splitted_ID[0] +
+                                    " " + col)
+                                print("Unknown feature class sorting as first class feature: " + splitted_ID[
+                                    0] + " " + col)
                                 first_class.append(splitted_ID[0])
                                 if len(splitted_ID) > 1:
                                     feature_class.append(splitted_ID[1])
@@ -495,13 +500,13 @@ class FeatureFormatter:
                                 continue
 
 
-                        
-                        
+
+
                     else:
                         splitted_ID = col.split("_")
                         tmp = self.get_feature_format(feature_class="Clinical_feature",
-                                                splitted_feature_str=splitted_ID,
-                                                feature_name=col)
+                                                      splitted_feature_str=splitted_ID,
+                                                      feature_name=col)
 
                         feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
@@ -572,7 +577,8 @@ class FeatureFormatter:
         elif feature_class == "morphological":
             morphology = ["volume", "vol_approx", "area_mesh", "av", "comp_1", "comp_2", "sph_dispr",
                           "sphericity", "asphericity", "com", "diam", "pca_maj_axis", "pca_min_axis", "pca_least_axis",
-                          "pca_elongation", "pca_flatness", "area_dens_aee", "vol_dens_aabb", "area_dens_aabb", "vol_dens_aee", "vol_dens_conv_hull",
+                          "pca_elongation", "pca_flatness", "area_dens_aee", "vol_dens_aabb", "area_dens_aabb",
+                          "vol_dens_aee", "vol_dens_conv_hull",
                           "area_dens_conv_hull", "integ_int", "moran_i", "geary_c"]
             return morphology
 
@@ -589,8 +595,9 @@ class FeatureFormatter:
         elif feature_class == "intensity_histogram":
             # dependent on the base_discretisation_bin_width in feature extraction --> postfix: fbs_w6.0
             intensity_histogram = ["mean", "var", "skew", "kurt", "median", "p10", "p90",
-                                    "mode", "iqr", "range", "mad", "rmad", "medad", "cov",
-                                   "qcod", "entropy", "uniformity","max_grad_g", "max_grad", "min_grad_g", "min_grad", "max", "min",
+                                   "mode", "iqr", "range", "mad", "rmad", "medad", "cov",
+                                   "qcod", "entropy", "uniformity", "max_grad_g", "max_grad", "min_grad_g", "min_grad",
+                                   "max", "min",
                                    ]
             return intensity_histogram
 
@@ -607,26 +614,29 @@ class FeatureFormatter:
         elif feature_class == "grey_level_co-occurrence_matrix":
             # dependent on the base_discretisation_bin_width and on glcm_spatial_method (dimensions to extract from) --> postfix d1_2d_avg_fbs_w6.0 d1_3d_avg_fbs_w6.0 d1_2d_s_mrg_fbs_w6.0 d1_3d_v_mrg_fbs_w6.0
             glcm = ["joint_max", "joint_avg", "joint_var", "joint_entr", "diff_avg", "diff_var", "diff_entr",
-                    "sum_avg", "sum_var", "sum_entr", "energy", "contrast", "dissimilarity", 
-                    "inv_diff_norm", "inv_diff_mom_norm", "inv_diff_mom",  "inv_diff", "inv_var", "corr", "auto_corr", "clust_tend", "clust_shade",
+                    "sum_avg", "sum_var", "sum_entr", "energy", "contrast", "dissimilarity",
+                    "inv_diff_norm", "inv_diff_mom_norm", "inv_diff_mom", "inv_diff", "inv_var", "corr", "auto_corr",
+                    "clust_tend", "clust_shade",
                     "clust_prom", "info_corr1", "info_corr2"]
             return glcm
 
         elif feature_class == "grey_level_run_length_matrix":
             # dependent on the base_discretisation_bin_width and on the glrlm_spatial_method
-            glrlm = ["sre", "lre", "lgre", "hgre", "srlge", "srhge", "lrlge", "lrhge", "glnu_norm","glnu", 
-                     "rlnu_norm", "rlnu",  "r_perc", "gl_var", "rl_var", "rl_entr"]
+            glrlm = ["sre", "lre", "lgre", "hgre", "srlge", "srhge", "lrlge", "lrhge", "glnu_norm", "glnu",
+                     "rlnu_norm", "rlnu", "r_perc", "gl_var", "rl_var", "rl_entr"]
             return glrlm
 
         elif feature_class == "grey_level_size_zone_matrix":
             # dependent on the base_discretisation_bin_width and on the glszm_spatial_method
-            glszm = ["sze", "lze", "lgze", "hgze", "szlge", "szhge", "lzlge", "lzhge", "glnu_norm", "glnu",  "zsnu_norm", "zsnu",
+            glszm = ["sze", "lze", "lgze", "hgze", "szlge", "szhge", "lzlge", "lzhge", "glnu_norm", "glnu", "zsnu_norm",
+                     "zsnu",
                      "z_perc", "gl_var", "zs_var", "zs_entr"]
             return glszm
 
         elif feature_class == "grey_level_distance_zone_matrix":
             # dependent on the base_discretisation_bin_width and on the gldzm_spatial_method
-            gldzm = ["sde", "lde", "lgze", "hgze", "sdlge", "sdhge", "ldlge", "ldhge", "glnu_norm", "glnu", "zdnu_norm", "zdnu",
+            gldzm = ["sde", "lde", "lgze", "hgze", "sdlge", "sdhge", "ldlge", "ldhge", "glnu_norm", "glnu", "zdnu_norm",
+                     "zdnu",
                      "z_perc", "gl_var", "zd_var", "zd_entr"]
             return gldzm
 
@@ -637,7 +647,8 @@ class FeatureFormatter:
 
         elif feature_class == "neighbouring_grey_level_dependence_matrix":
             # dependent on the base_discretisation_bin_width and on the ngldm_spatial_method
-            ngldm = ["lde", "hde", "lgce", "hgce", "ldlge", "ldhge", "hdlge", "hdhge", "glnu_norm", "glnu", "dcnu_norm", "dcnu",
+            ngldm = ["lde", "hde", "lgce", "hgce", "ldlge", "ldhge", "hdlge", "hdhge", "glnu_norm", "glnu", "dcnu_norm",
+                     "dcnu",
                      "dc_perc", "gl_var", "dc_var", "dc_entr", "dc_energy"]
             return ngldm
         else:
@@ -660,7 +671,7 @@ class FeatureFormatter:
         """
 
         tmp = pd.DataFrame()
-        
+
         if self.extractor == "MIRP":
             for feature in self.get_mirp_features(feature_class):
                 kernel_found = False
@@ -684,7 +695,7 @@ class FeatureFormatter:
 
                             if kernel_specs.endswith("_zscore"):
                                 kernel_specs = kernel_specs[:-len("_zscore")]
-    
+
                             tmp = pd.DataFrame({"Feature": [feature],
                                                 "Feature_Class": [feature_class],
                                                 "Image_Kernel": [kernel_specs],
@@ -703,7 +714,7 @@ class FeatureFormatter:
                 for feature in self.get_pyradiomics_features(feature_class):
                     kernel_found = False
                     search_str = None
-                    
+
                     if "_" in feature:
 
                         if feature == splitted_feature_str[1]:
@@ -742,7 +753,7 @@ class FeatureFormatter:
                                                 "Feature_Class": [feature_class],
                                                 "Image_Kernel": ["Original_Image"],
                                                 "Name": [feature_name]})
-                        #break
+                        # break
 
         if feature_class == "Clinical_feature":
             tmp = pd.DataFrame({"Feature": [feature_name],
@@ -751,7 +762,7 @@ class FeatureFormatter:
                                 "Name": [feature_name]})
         return tmp
 
-    def check_mirp_feature_format(self, input_features:list):
+    def check_mirp_feature_format(self, input_features: list):
 
         first_class = []
         feature_class = []
@@ -772,7 +783,7 @@ class FeatureFormatter:
 
         tmp = pd.DataFrame()
         feature_format = pd.DataFrame()
-        
+
         for col in input_features:
             if col != "Image" and col != "Mask":
                 splitted_ID = col.split("_", 1)
@@ -781,88 +792,88 @@ class FeatureFormatter:
                     morph.append(splitted_ID[1:])
 
                     tmp = self.get_feature_format(feature_class="morphological",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "loc":  # local intensity
                     loc.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="local_intensity",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "stat":  # intensity-based statistics
                     stat.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="intensity-based_statistics",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "ivh":  # intensity-volume histogram
                     ivh.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="intensity-volume_histogram",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "ih":  # intensity histogram
                     ih.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="intensity_histogram",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "cm":  # grey level co-occurrence matrix
                     gcm.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="grey_level_co-occurrence_matrix",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "rlm":  # grey level run length matrix
                     grlm.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="grey_level_run_length_matrix",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "szm":  # grey level size zone matrix
                     gszm.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="grey_level_size_zone_matrix",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "dzm":  # grey level distance zone matrix
                     gdzm.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="grey_level_distance_zone_matrix",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "ngt":  # neighbourhood grey tone difference matrix
                     ngt.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="neighbourhood_grey_tone_difference_matrix",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "ngl":  # neighbouring grey level dependence matrix
                     ngl.append(splitted_ID[1:])
                     tmp = self.get_feature_format(feature_class="neighbouring_grey_level_dependence_matrix",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
@@ -870,21 +881,22 @@ class FeatureFormatter:
                     if str(splitted_ID[0] + "_" + splitted_ID[1]) == "img_data":  # image data
                         img_data.append(splitted_ID[2])
                         tmp = self.get_feature_format(feature_class="img_data",
-                                                 splitted_feature_str=splitted_ID,
-                                                 feature_name=col)
+                                                      splitted_feature_str=splitted_ID,
+                                                      feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 elif splitted_ID[0] == "diag":  # diagnostic data
                     diag.append(splitted_ID[1])
                     tmp = self.get_feature_format(feature_class="diagnostic",
-                                             splitted_feature_str=splitted_ID,
-                                             feature_name=col)
+                                                  splitted_feature_str=splitted_ID,
+                                                  feature_name=col)
 
                     feature_format = pd.concat([feature_format, tmp], ignore_index=True)
 
                 else:
-                    self.logger.info("Unknown feature class sorting as first class feature: " + splitted_ID[0] + " " + col)
+                    self.logger.info(
+                        "Unknown feature class sorting as first class feature: " + splitted_ID[0] + " " + col)
                     first_class.append(splitted_ID[0])
                     if len(splitted_ID) > 1:
                         feature_class.append(splitted_ID[1])
@@ -973,14 +985,13 @@ class FeatureFormatter:
         if len(features) != 0:
             if self.generate_feature_profile_plot:
                 self.generate_feature_profile(profile=features, title=self.extractor + " " + title,
-                                            path=self.output_path)
+                                              path=self.output_path)
 
         else:
             self.error.warning("Feature Profile generation Failed! No features found with correct format.")
             print("Feature Profile generation Failed! No features found with correct format.")
 
-
-        #for feature in features.columns:
+        # for feature in features.columns:
         #    for format in self.format_columns:
         #        if feature.startswith(format):
         #            for kernel in self.kernels_in_files:

@@ -1,24 +1,11 @@
 from __future__ import print_function
 
-import os
-import psutil
-from threading import Semaphore
-import logging
-import json
-
-import numpy as np
-import pandas as pd
-from typing import Union, List
-
-from rptk.src.config.Transformation_config import *
-from rptk.src.segmentation_processing.Segmentation_perturbator import *
-
-from rptk.mirp.experimentClass import ExperimentClass
-from rptk.mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass, \
-    ImageInterpolationSettingsClass, RoiInterpolationSettingsClass, ResegmentationSettingsClass
+from typing import Union
 
 import radiomics
-from radiomics import *
+
+from src.config.Transformation_config import *
+from src.segmentation_processing.Segmentation_perturbator import *
 
 
 class Pyradiomics_image_transformer:
@@ -37,7 +24,8 @@ class Pyradiomics_image_transformer:
                  img_path: str = "",  # path to image
                  seg_path: str = "",  # path to segmentation
                  output_dir: str = "",  # output directory
-                 tidy_output: bool = False,  # If True, the output will be in separated folders and csv files with all the
+                 tidy_output: bool = False,
+                 # If True, the output will be in separated folders and csv files with all the
                  logger=logging.getLogger("Pyradiomics Image Transformer"),
                  LoG_sigma=None,
                  Gradient_gradientUseSpacing=True,
@@ -93,7 +81,6 @@ class Pyradiomics_image_transformer:
         self.LBP3D_lbp3DIcosphereRadius = LBP3D_lbp3DIcosphereRadius
         self.LBP3D_lbp3DIcosphereSubdivision = LBP3D_lbp3DIcosphereSubdivision
 
-
         # read config file
         if self.rptk_config_json != None:
             # read conifg json file
@@ -101,14 +88,23 @@ class Pyradiomics_image_transformer:
                 self.config = json.load(f)
 
             self.LoG_sigma = self.config["Preprocessing_config"]["transformation_kernel_config"]["LoG"]["LoG_sigma"]
-            self.Gradient_gradientUseSpacing = self.config["Preprocessing_config"]["transformation_kernel_config"]["Gradient"]["Gradient_gradientUseSpacing"]
-            self.LBP2D_lbp2DRadius = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP2D"]["LBP2D_lbp2DRadius"]
-            self.LBP2D_lbp2DSamples = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP2D"]["LBP2D_lbp2DSamples"]
-            self.LBP2D_lbp2DMethod = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP2D"]["LBP2D_lbp2DMethod"]
-            self.LBP3D_lbp3DLevels = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP3D"]["LBP3D_lbp3DLevels"]
-            self.LBP3D_lbp3DIcosphereRadius = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP3D"]["LBP3D_lbp3DIcosphereRadius"]
-            self.LBP3D_lbp3DIcosphereSubdivisionLevel = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP3D"]["LBP3D_lbp3DIcosphereSubdivisionLevel"]
-
+            self.Gradient_gradientUseSpacing = \
+                self.config["Preprocessing_config"]["transformation_kernel_config"]["Gradient"][
+                    "Gradient_gradientUseSpacing"]
+            self.LBP2D_lbp2DRadius = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP2D"][
+                "LBP2D_lbp2DRadius"]
+            self.LBP2D_lbp2DSamples = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP2D"][
+                "LBP2D_lbp2DSamples"]
+            self.LBP2D_lbp2DMethod = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP2D"][
+                "LBP2D_lbp2DMethod"]
+            self.LBP3D_lbp3DLevels = self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP3D"][
+                "LBP3D_lbp3DLevels"]
+            self.LBP3D_lbp3DIcosphereRadius = \
+                self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP3D"][
+                    "LBP3D_lbp3DIcosphereRadius"]
+            self.LBP3D_lbp3DIcosphereSubdivisionLevel = \
+                self.config["Preprocessing_config"]["transformation_kernel_config"]["LBP3D"][
+                    "LBP3D_lbp3DIcosphereSubdivisionLevel"]
 
         self.roi_names = [os.path.basename(self.seg_path)[:-len(".nii.gz")]]
 
@@ -154,7 +150,7 @@ class Pyradiomics_image_transformer:
         """
         write image to out_folder
         """
-        
+
         file_name = os.path.basename(self.img_path)
         out_files = []
 
@@ -165,7 +161,8 @@ class Pyradiomics_image_transformer:
         # Save files to an appropriate location
         for img in img_list:
             if self.tidy_output:
-                src_filepath = os.path.join(self.output_dir, out_folder_name, file_name[:-len(".nii.gz")] + "_" + img[1] + ".nii.gz")
+                src_filepath = os.path.join(self.output_dir, out_folder_name,
+                                            file_name[:-len(".nii.gz")] + "_" + img[1] + ".nii.gz")
                 if not os.path.exists(src_filepath):
                     sitk.WriteImage(img[0], src_filepath, useCompression=True)
                 out_files.append(src_filepath)
@@ -174,10 +171,10 @@ class Pyradiomics_image_transformer:
                 if not os.path.exists(src_filepath):
                     sitk.WriteImage(img[0], src_filepath, useCompression=True)
                 out_files.append(src_filepath)
-                
+
         # free memory
         del img_list
-        
+
         return out_files
 
     def run_from_yaml_file(self):
@@ -231,16 +228,16 @@ class Pyradiomics_image_transformer:
 
                             Wavelet_img_list = self.extract_2_listextract_2_list(Wavelet_generator)
                             t_img_paths_list = self.save_transformed_img(
-                                                                        "Wavelet",
-                                                                        Wavelet_img_list)
+                                "Wavelet",
+                                Wavelet_img_list)
                             del Wavelet_img_list
                             del Wavelet_generator
-                            
+
                             for t_img in t_img_paths_list:
                                 self.transformed_img_paths.append(t_img)
 
                             # free memory
-                            
+
                             del t_img_paths_list
 
                         if kernel == "Square":
@@ -385,8 +382,8 @@ class Pyradiomics_image_transformer:
     def run_from_list(self):
 
         # TODO add for all filters to get the transformed image and save it from the input list
-        #print("self.img_path", self.img_path)
-        #print("self.seg_path", self.seg_path)
+        # print("self.img_path", self.img_path)
+        # print("self.seg_path", self.seg_path)
         image = sitk.ReadImage(self.img_path)
         label = sitk.ReadImage(self.seg_path)
 
@@ -420,19 +417,19 @@ class Pyradiomics_image_transformer:
                     Wavelet_generator = imageoperations.getWaveletImage(image, label)
 
                     Wavelet_img_list = self.extract_2_list(Wavelet_generator)
-                    
+
                     t_img_paths_list = self.save_transformed_img(
                         "Wavelet",
                         Wavelet_img_list)
-                    
+
                     del Wavelet_img_list
                     del Wavelet_generator
-                    
+
                     for t_img in t_img_paths_list:
                         self.transformed_img_paths.append(t_img)
 
                     # free memory
-                    
+
                     del t_img_paths_list
 
                 if kernel == "Square":
@@ -519,7 +516,7 @@ class Pyradiomics_image_transformer:
                     LBP2D_generator = imageoperations.getLBP2DImage(image, label,
                                                                     lbp2DRadius=self.LBP2D_lbp2DRadius,
                                                                     lbp2DMethod=self.LBP2D_lbp2DMethod,
-                                                                    lbp2DSamples=self.LBP2D_lbp2DSamples,)
+                                                                    lbp2DSamples=self.LBP2D_lbp2DSamples, )
 
                     LBP2D_img_list = self.extract_2_list(LBP2D_generator)
                     t_img_paths_list = self.save_transformed_img(
@@ -537,7 +534,7 @@ class Pyradiomics_image_transformer:
                     LBP3D_generator = imageoperations.getLBP3DImage(image, label,
                                                                     lbp3DLevels=self.LBP3D_lbp3DLevels,
                                                                     lbp3DIcosphereRadius=self.LBP3D_lbp3DIcosphereRadius,
-                                                                    lbp3DIcosphereSubdivisionLevel=self.LBP3D_lbp3DIcosphereSubdivisionLevel,)
+                                                                    lbp3DIcosphereSubdivisionLevel=self.LBP3D_lbp3DIcosphereSubdivisionLevel, )
 
                     LBP3D_img_list = self.extract_2_list(LBP3D_generator)
                     t_img_paths_list = self.save_transformed_img(
@@ -742,7 +739,7 @@ class MIRP_image_and_seg_pertubator:
                     MIRP_transformations=[self.kernels])
             else:
                 self.logger.error("Kernel {} not available!".format(self.kernels))
-                image_trans_config = Transformation_config(rptk_config_json=self.rptk_config_json,)
+                image_trans_config = Transformation_config(rptk_config_json=self.rptk_config_json, )
                 # print(image_trans_config.get_mirp_transformation_settings())
 
             image_transformation_settings = image_trans_config.get_mirp_transformation_settings()["Settings"].iloc[0]

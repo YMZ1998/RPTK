@@ -2,26 +2,18 @@
 # import mirp_image_transformer as mit
 # import Image_transformer as it
 
-from typing import Union, List
-
-import os
-import logging
-from tqdm import *
-import pandas as pd
-import multiprocessing
-import nibabel as nib
-from threading import Thread
-from multiprocessing import Pool
-import os.path
-import glob
 import concurrent.futures
 import gc
+import os
+import os.path
+from typing import Union, List
 
-import sys
+import pandas as pd
+from tqdm import *
 
-#sys.path.insert(0, 'src')
-import rptk.src.image_processing.Image_transformer as it
-from rptk.src.config.Log_generator_config import LogGenerator
+# sys.path.insert(0, 'src')
+import src.image_processing.Image_transformer as it
+from src.config.Log_generator_config import LogGenerator
 
 
 class Executor:
@@ -51,7 +43,7 @@ class Executor:
                  RunID: str = None,
                  config_file_path: str = None,
                  fast_mode: bool = True,
-                ):
+                 ):
 
         self.kernels = kernels
         self.n_cpu = n_cpu
@@ -73,13 +65,14 @@ class Executor:
         self.rptk_config_json = rptk_config_json
         self.fast_mode = fast_mode
 
-
         self.kernel_patterns = ["wavelet-", "square.", "squareroot", "_logarithm", "_exponential", "_gradient",
-                           "_lbp-2D", "_lbp-3D", "_laws_", "gabor", "gauss", "separable_wavelet", "mean", "log_", "log-"]
+                                "_lbp-2D", "_lbp-3D", "_laws_", "gabor", "gauss", "separable_wavelet", "mean", "log_",
+                                "log-"]
 
         self.kernel_in_config = ["Wavelet", "Square.", "SquareRoot", "Logarithm", "Exponential", "Gradient",
-                                "LBP2D", "LBP3D", "laws", "gabor", "gaussian", "separable_wavelet", "mean", "laplacian_of_gaussian",
-                                "LoG"]
+                                 "LBP2D", "LBP3D", "laws", "gabor", "gaussian", "separable_wavelet", "mean",
+                                 "laplacian_of_gaussian",
+                                 "LoG"]
 
         # how kernels are written in files:
         self.kernels_in_files = {"Wavelet": "wavelet-",
@@ -93,7 +86,7 @@ class Executor:
                                  "laws": "_laws_",
                                  "gabor": "gabor",
                                  "gaussian": "gauss",
-                                  #"nonseparable_wavelet": "_wavelet_",  # Maybe not correct
+                                 # "nonseparable_wavelet": "_wavelet_",  # Maybe not correct
                                  "separable_wavelet": "separable_wavelet",  # Maybe not correct
                                  "mean": "mean",
                                  "laplacian_of_gaussian": "log_",
@@ -146,7 +139,8 @@ class Executor:
 
         if len(os.listdir(self.output_dir)) > 0:
             IDs = set(self.df.loc[:, "ID"].tolist())
-            o_files = [os.path.basename(f) for f in os.listdir(self.output_dir) if os.path.isfile(os.path.join(self.output_dir, f))]
+            o_files = [os.path.basename(f) for f in os.listdir(self.output_dir) if
+                       os.path.isfile(os.path.join(self.output_dir, f))]
 
             # if processed samples are not given, look into output file and see which samples are already processed
             # if self.to_process is None:
@@ -207,7 +201,7 @@ class Executor:
                          "\n\t\t\t\t\t\t\t\t\t\tKernels: " + str(self.kernels) +
                          "\n\t\t\t\t\t\t\t\t\t\tCSV input file path: " + str(self.input_csv) +
                          "\n\t\t\t\t\t\t\t\t\t\tCPUs: " + str(self.n_cpu)
-                        )
+                         )
 
     def get_pyradiomics(self, kernel, img_path, seg_path):
 
@@ -305,7 +299,7 @@ class Executor:
 
         return found_kernel
 
-    def generate_experiments(self, experiments:dict, kernel:str, img_path:str, seg_path:str):
+    def generate_experiments(self, experiments: dict, kernel: str, img_path: str, seg_path: str):
         """
         Generate experiments for Image Transformation
         :param experiments: dict for experiments
@@ -316,11 +310,11 @@ class Executor:
         """
 
         if kernel in self.pyradiomics_kernels:
-            self.count_to_process +=1
+            self.count_to_process += 1
             experiment = self.get_pyradiomics(kernel=kernel,
-                                                img_path=img_path,
-                                                seg_path=seg_path)
-                
+                                              img_path=img_path,
+                                              seg_path=seg_path)
+
             if not experiment is None:
                 if kernel in experiments.keys():
                     experiments[kernel].append(experiment)
@@ -328,10 +322,10 @@ class Executor:
                     experiments[kernel] = [experiment]
 
         elif kernel in self.mirp_kernels:
-            self.count_to_process +=1
+            self.count_to_process += 1
             experiment = self.get_mirp(kernel=kernel,
-                                        img_path=img_path,
-                                        seg_path=seg_path)
+                                       img_path=img_path,
+                                       seg_path=seg_path)
 
             if kernel in experiments.keys():
                 experiments[kernel].append(experiment)
@@ -364,7 +358,8 @@ class Executor:
         transformed_samples = {}
 
         for img_path in list(set(df["Image"])):
-            seg_path = df.loc[df["Image"] == img_path, "Mask"].values[0]  # does not matter as it is only about the image
+            seg_path = df.loc[df["Image"] == img_path, "Mask"].values[
+                0]  # does not matter as it is only about the image
             # self.logger.info("Configuration of " + str(os.path.basename(img_path)))
 
             ID = df.loc[df["Image"] == img_path, "ID"].values[0]
@@ -373,25 +368,31 @@ class Executor:
             # Get all transformations from this sample from the csv file
             if "Image_Transformation" in SampleIO.columns:
                 if len(SampleIO.loc[~SampleIO["Image_Transformation"].isna()]) > 0:
-                    for ker in list(set(SampleIO.loc[~SampleIO["Image_Transformation"].isna(), "Image_Transformation"])):
+                    for ker in list(
+                        set(SampleIO.loc[~SampleIO["Image_Transformation"].isna(), "Image_Transformation"])):
                         # check if transformations for this ID has been performed already
                         if ker not in transformed_samples.keys():
-                            transformed_samples[ker] = list(SampleIO.loc[SampleIO["Image_Transformation"] == ker, "ID"].values)
+                            transformed_samples[ker] = list(
+                                SampleIO.loc[SampleIO["Image_Transformation"] == ker, "ID"].values)
                         else:
-                            transformed_samples[ker] += list(SampleIO.loc[SampleIO["Image_Transformation"] == ker, "ID"].values)
-                #else:
+                            transformed_samples[ker] += list(
+                                SampleIO.loc[SampleIO["Image_Transformation"] == ker, "ID"].values)
+                # else:
                 #    self.error.warning("Sample {} has NaN values in input csv".format(str(set(SampleIO["ID"].to_list()))))
                 #    print("Sample {} has NaN values in input csv".format(str(set(SampleIO["ID"].to_list()))))
             else:
-                self.error.warning("Can not find Image_Transformation in input csv for executing Transformation! Check your input file")
+                self.error.warning(
+                    "Can not find Image_Transformation in input csv for executing Transformation! Check your input file")
 
             # if modality is not defined
             if self.modality == None:
                 if "Modality" in df.columns:
                     self.modality = df.loc[df["Image"] == img_path, "Modality"].values[0]
                 else:
-                    self.error.error("Modality not defined! Please either add a column to the csv for Modality or define it for transformation!")
-                    raise ValueError("Modality not defined! Please either add a column to the csv for Modality or define it for transformation!")
+                    self.error.error(
+                        "Modality not defined! Please either add a column to the csv for Modality or define it for transformation!")
+                    raise ValueError(
+                        "Modality not defined! Please either add a column to the csv for Modality or define it for transformation!")
 
             if self.kernels is not None:
                 # only execute if this has not been done before (images are duplicated in the csv)
@@ -403,10 +404,15 @@ class Executor:
                             if kernel in self.to_process.keys():
 
                                 if not kernel in self.kernels_in_files.keys():
-                                    self.error.error("Kernel {} is not supported! Please select one of the following: {}".format(kernel, str(self.kernels_in_files.keys())))
-                                    raise ValueError("Kernel {} is not supported! Please select one of the following: {}".format(kernel, str(self.kernels_in_files.keys())))
+                                    self.error.error(
+                                        "Kernel {} is not supported! Please select one of the following: {}".format(
+                                            kernel, str(self.kernels_in_files.keys())))
+                                    raise ValueError(
+                                        "Kernel {} is not supported! Please select one of the following: {}".format(
+                                            kernel, str(self.kernels_in_files.keys())))
 
-                                if self.kernels_in_files[kernel] in os.path.basename(img_path):  # img_path not in self.find_kernel_in_file[kernel]:
+                                if self.kernels_in_files[kernel] in os.path.basename(
+                                    img_path):  # img_path not in self.find_kernel_in_file[kernel]:
                                     if kernel not in transformed_samples.keys():
                                         transformed_samples[kernel] = list(df.loc[df["Image"] == img_path, "ID"].values)
                                     else:
@@ -491,8 +497,8 @@ class Executor:
             self.logger.info("Number of experiments: " + str(len(experiments[kernel])))
             print("Executing " + str(kernel) + " Transformation")
             print("Number of experiments: " + str(len(experiments[kernel])))
-            
-            #try:
+
+            # try:
             #    with tqdm(total=len(experiments[kernel]), desc="Performing " + kernel + " Transformation") as pbar:
             #        chunk_size = self.n_cpu  # Adjust the chunk size based on your memory constraints
             #        with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
@@ -506,17 +512,17 @@ class Executor:
             #                        gc.collect()
             #            del futures
             #                        
-            #except Exception as ex:
+            # except Exception as ex:
             #    self.error.error("Performing " + kernel + " Transformation Failed! " + str(ex))
             if self.fast_mode:
                 try:
-                    #with tqdm(total=len(experiments[kernel]), desc="Performing " + kernel + " Transformation") as pbar:
+                    # with tqdm(total=len(experiments[kernel]), desc="Performing " + kernel + " Transformation") as pbar:
                     with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
-                        
+
                         result = list(tqdm(executor.map(self.process, experiments[kernel]),
-                                        total=len(experiments[kernel]),
-                                        desc="Performing " + kernel + " Transformation"))
-                
+                                           total=len(experiments[kernel]),
+                                           desc="Performing " + kernel + " Transformation"))
+
                         for future in result:
                             if future is None:
                                 self.error.warning("Failed Image Transformation {}.".format(kernel))
@@ -529,16 +535,17 @@ class Executor:
                                         print("Failed Image Transformation {}: {}".format(kernel, ex))
                                         gc.collect()
                                         continue
-                            
+
                                 gc.collect()  # Force garbage collection
-                
+
                         # del chunk  # Free memory for the chunk
                         gc.collect()  # Force garbage collection
                         del result
-                
+
                 except Exception as ex:
                     self.error.error("Performing " + kernel + " Transformation Failed! " + str(ex))
-                    print("Performing " + kernel + " Transformation Failed! " + str(ex), "Trying to execute it in slow mode ...")
+                    print("Performing " + kernel + " Transformation Failed! " + str(ex),
+                          "Trying to execute it in slow mode ...")
 
                     for experiment in experiments[kernel]:
                         try:
@@ -549,7 +556,8 @@ class Executor:
                             gc.collect()
                             continue
             else:
-                for experiment in tqdm(experiments[kernel], total=len(experiments[kernel]), desc="Performing " + kernel + " Transformation"):
+                for experiment in tqdm(experiments[kernel], total=len(experiments[kernel]),
+                                       desc="Performing " + kernel + " Transformation"):
                     try:
                         self.process(experiment)
                     except Exception as ex:
@@ -568,7 +576,6 @@ class Executor:
         # 1. if all transformations in inout csv are in output folder
         # 2. check and remove not valid transformations (double transformations or transformation in config)
         # 3. check which transformation from the perforemd transformations are missing with the current setting and which are not included
-
 
         experiments = self.get_experiments()
 

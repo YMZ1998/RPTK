@@ -1,56 +1,48 @@
 from __future__ import print_function
 
+import concurrent.futures
+import datetime
+import gc
+import glob
+import logging
+import logging
+import multiprocessing
 import os
-import psutil
+import re
 import sys
+import time
+from multiprocessing import Pool
 from threading import Semaphore
+from threading import Thread
 
 import SimpleITK as sitk
 import numpy as np
 import pandas as pd
+import psutil
+import tqdm
 import yaml
 from iteration_utilities import duplicates
 from p_tqdm import p_map
-import time
-import datetime
-import logging
-import gc
+from tqdm.contrib.concurrent import process_map
+
+from mirp.experimentClass import ExperimentClass
+from mirp.imageClass import *
+from mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass, \
+    ImageInterpolationSettingsClass, RoiInterpolationSettingsClass, ResegmentationSettingsClass, \
+    ImagePerturbationSettingsClass, ImageTransformationSettingsClass, FeatureExtractionSettingsClass
+from mirp.roiClass import *
+# from src.feature_filtering.Radiomics_Filter_exe import RadiomicsFilter
+from src.config.Log_generator_config import LogGenerator
+
 
 # from loaders import BarLoader, SpinningLoader, TextLoader
-
 # +
 # sys.path.append('src')
 # -
-
-# from src.feature_filtering.Radiomics_Filter_exe import RadiomicsFilter
-from rptk import rptk
-from rptk.src.config.Log_generator_config import LogGenerator
-
-from rptk.mirp.experimentClass import ExperimentClass
-from rptk.mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass, \
-    ImageInterpolationSettingsClass, RoiInterpolationSettingsClass, ResegmentationSettingsClass, \
-    ImagePerturbationSettingsClass, ImageTransformationSettingsClass, FeatureExtractionSettingsClass
-
-from rptk.mirp.imageClass import *
-from rptk.mirp.roiClass import *
-
 # import mirp_predict_lib as mirp_predict
 # from mirp_predict_lib import *
-
 # from mirp_pipeline.Preprocessor import Preprocessor
 # from mirp_pipeline.Experiment_setup import *
-
-import tqdm
-import glob
-import re
-import multiprocessing
-
-from threading import Thread
-from multiprocessing import Pool
-from tqdm.contrib.concurrent import process_map
-
-import logging
-import concurrent.futures
 
 
 # from segmentation_processing.SegProcessor import SegProcessor
@@ -309,7 +301,7 @@ class MissingExperimentDetector:
                 else:
                     self.error.warning(
                         "Outfile does not match configuration! Please check the outfile name " + exp_base)
-        
+
         return done_experiments, failed
 
     def check_config_columns(self, done_experiments: pd.DataFrame):
@@ -320,7 +312,7 @@ class MissingExperimentDetector:
         """
         # print(done_experiments)
         # 1. extract all columns which names include Unnamed.
-        unnamed_cols = rptk.get_unnamed_cols(df=done_experiments)
+        unnamed_cols = get_unnamed_cols(df=done_experiments)
         if len(unnamed_cols) > 0:
             self.logger.info("Found {} unnamed columns!".format(str(len(unnamed_cols))))
 
@@ -328,11 +320,11 @@ class MissingExperimentDetector:
         unnamed_done_experiments = done_experiments[unnamed_cols].copy()
 
         # 3. drop duplicated columns
-        unnamed_done_experiments = rptk.drop_cols_with_same_values(df=unnamed_done_experiments)
-        unnamed_cols_unique = rptk.get_unnamed_cols(df=unnamed_done_experiments)
+        unnamed_done_experiments = drop_cols_with_same_values(df=unnamed_done_experiments)
+        unnamed_cols_unique = get_unnamed_cols(df=unnamed_done_experiments)
 
         # 4. search for column with config string and drop the others
-        config_cols = rptk.get_config_column_name(df=done_experiments, list_of_config_candidates=unnamed_cols_unique)
+        config_cols = get_config_column_name(df=done_experiments, list_of_config_candidates=unnamed_cols_unique)
 
         drop_cols = [x for x in unnamed_cols if x not in config_cols]
 
@@ -358,10 +350,10 @@ class MissingExperimentDetector:
         Checks if the outfile already exists and contains all experiments which should be processed.
         :return: list with missing experiments IDs
         """
-        
+
         # TODO start loader
-        #loader = SpinningLoader(text="Checking Outfiles")
-        #loader.start()
+        # loader = SpinningLoader(text="Checking Outfiles")
+        # loader.start()
 
         done_experiments_id = []
         done_experiments = pd.DataFrame()
@@ -376,24 +368,23 @@ class MissingExperimentDetector:
         if len(done_exps_paths) > 0:
             # 2. read outfile
             done_experiments, failed = self.check_outfile_naming_and_read(done_exps_path_list=done_exps_paths)
-            
+
             # 2.1 check format of done experiments and find config column
             done_experiments = self.check_config_columns(done_experiments=done_experiments)
-            
+
             if done_experiments.empty:
                 correct = [path for path in done_exps_paths if self.extractor in os.path.basename(path)]
                 if len(correct) > 0:
                     # outfile is empty
-                    self.error.warning("No entry in outfile! Could not find any done experiments in " + str(done_exps_paths))
+                    self.error.warning(
+                        "No entry in outfile! Could not find any done experiments in " + str(done_exps_paths))
                     print("No entry in outfile!")
                 return done_experiments_id, done_experiments, failed
             else:
                 # 3. check format of outfile
                 self.logger.info("Found " + str(len(done_experiments)) + " done experiments.")
                 print("Found " + str(len(done_experiments)) + " done experiments.")
-                
-                
-                
+
                 # Outfile_checker = Outfile_validator(df=done_experiments,
                 #                                     extractor=self.extractor,
                 #                                     logger=self.logger,
@@ -426,15 +417,15 @@ class MissingExperimentDetector:
                 else:
                     self.logger.error("Extractor not supported!")
                     sys.exit()
-                    
-                
+
+
         else:
             self.logger.info("No outfile found in " + str(self.out_path))
 
         self.logger.info("Found " + str(len(done_experiments)) + " done experiments.")
-        
+
         # loader.stop()
-        
+
         return done_experiments_id, done_experiments, failed
 
         #             done_samples = done_experiments.index.tolist()
@@ -493,9 +484,9 @@ class MissingExperimentDetector:
                     done_tmp = {"ID": [done_exp], "File_path": [exp]}
                     done_df = pd.concat([done_df, pd.DataFrame(data=done_tmp)], ignore_index=True)
             else:
-                 print("Warning:",os.path.basename(exp),"is empty! Remove file from tmp results!")
-                 self.logger.info(str(os.path.basename(exp)) + " is empty! Remove file from results!")
-                 os.remove(exp)
+                print("Warning:", os.path.basename(exp), "is empty! Remove file from tmp results!")
+                self.logger.info(str(os.path.basename(exp)) + " is empty! Remove file from results!")
+                os.remove(exp)
 
         return done_df
 
@@ -526,11 +517,11 @@ class MissingExperimentDetector:
                     df, failed = self.concat_extraction(csv_files=done_files_df["File_path"].tolist())
                     done_experiments = pd.concat([done_experiments, df], axis=0)
                     done_experiments = done_experiments.drop_duplicates()
-        
+
         if len(failed) > 0:
             print("Found {} failed extracted samples.".format(str(len(failed))))
         # self.error.warning("Found {} failed extractions.".format(str(len(failed))))
-        
+
         return done_experiments, done_samples, failed
 
         #     else:
@@ -608,9 +599,7 @@ class MissingExperimentDetector:
         :param csv_files: list of csv files paths
         :return df: pd.DataFrame with concatinated csv dile from csv_files list
         """
-        
-        
-        
+
         df = None
         failed_samples = pd.DataFrame()
 
@@ -646,7 +635,7 @@ class MissingExperimentDetector:
                             if file.startswith(csv_file):
                                 csv_files.remove(csv_file)
                                 break
-                            
+
             elif len(csv_files) == len(df):
                 csv_files = []
             else:
@@ -661,14 +650,15 @@ class MissingExperimentDetector:
             try:
                 with Pool(processes=self.num_cpus) as pool:
                     # Use tqdm with imap to show progress
-                    for result, failed in tqdm.tqdm(pool.imap(self.read_file, csv_files), total=len(csv_files), desc="Reading feature files"):
+                    for result, failed in tqdm.tqdm(pool.imap(self.read_file, csv_files), total=len(csv_files),
+                                                    desc="Reading feature files"):
                         # get results together
                         if result is not None:
                             df = pd.concat([df, result], ignore_index=True)
                         # get failed extraction together
                         if failed is not None:
                             failed_samples = pd.concat([failed_samples, failed], ignore_index=True)
-                            
+
                 gc.collect()
 
                 # with tqdm.tqdm(total=len(csv_files), desc='Reading feature files') as pbar:
@@ -691,16 +681,16 @@ class MissingExperimentDetector:
                 #                 pbar.update(1)
                 #                 gc.collect()  # Force garbage collection
 
-                        # del result
-                        # del chunk  # Free memory for the chunk
-                        # del futures
-                        # gc.collect()  # Force garbage collection
+                # del result
+                # del chunk  # Free memory for the chunk
+                # del futures
+                # gc.collect()  # Force garbage collection
 
             except Exception as ex:
                 self.error.error("Reading Feature Files Failed! " + str(ex))
 
             df.to_csv(self.found_output_file_name)
-            
+
             print("Mem usage: %0.3f MB" % (psutil.Process().memory_info().rss / 1e6))
 
         else:
@@ -719,8 +709,7 @@ class MissingExperimentDetector:
         else:
             self.logger.info("Concatenated feature space: " + str(df.shape[0]) + " Samples "
                              + str(df.shape[1]) + " Features.")
-        
-        
+
         # report features with nan values
         if df.isnull().any().any():
             self.error.warning("Number of Features with NaN: " + str(df.isnull().any().sum()))
@@ -728,39 +717,38 @@ class MissingExperimentDetector:
             print("Number of Features with NaN: " + str(df.isnull().any().sum()))
             if df.isnull().any().sum() < 10:
                 print("Features with NaN: " + str(df.columns[df.isna().any()].tolist()))
-            
+
             # Get failed features and drop them
             config_features = ['Rater', 'Mask_Transformation', 'Image_Transformation', 'Raw_Image', 'Raw_Mask']
-            
+
             # not all features contain nan --> better drop samples with nan
-            if len(df.columns[df.isnull().any()]) != len(df.columns) :
-                
+            if len(df.columns[df.isnull().any()]) != len(df.columns):
+
                 # failed extraction for some features
                 remove = []
                 for feature in df.columns[df.isnull().all()]:
                     if feature not in config_features:
                         self.error.warning("Failed extracting feature {} for all samples!".format(feature))
                         remove.append(feature)
-                
+
                 if len(remove) > 0:
                     print("Found {} failed extracting features for all samples!".format(str(len(remove))))
                     # drop failed features
-                    df.drop(remove, axis = 1, inplace = True) 
-                
-                #remove = []
-                #for feature in df.columns[df.isnull().any()]:
-                    #if feature not in config_features:
-                        #self.error.warning("Failed extracting feature {}".format(feature))
-                        #remove.append(feature)
-                
-                #if len(remove) > 0:
-                    #print("Found {} failed extracting features!".format(str(len(remove))))
-                    #failed_df = df.copy()
-                    #failed_df = failed_df[remove]
-                    #failed_df.to_csv(self.out_path + "/failed_extraction.csv")
-                    #drop failed features
-                    #df.drop(remove, axis = 1, inplace = True) 
-                
+                    df.drop(remove, axis=1, inplace=True)
+
+                    # remove = []
+                # for feature in df.columns[df.isnull().any()]:
+                # if feature not in config_features:
+                # self.error.warning("Failed extracting feature {}".format(feature))
+                # remove.append(feature)
+
+                # if len(remove) > 0:
+                # print("Found {} failed extracting features!".format(str(len(remove))))
+                # failed_df = df.copy()
+                # failed_df = failed_df[remove]
+                # failed_df.to_csv(self.out_path + "/failed_extraction.csv")
+                # drop failed features
+                # df.drop(remove, axis = 1, inplace = True)
 
             if ("Image" in df.columns) and ("Mask" in df.columns):
                 if df["Image"].isnull().any() or df["Mask"].isnull().any():
@@ -776,11 +764,11 @@ class MissingExperimentDetector:
                         print("{} Failed extraction. Dropping ...".format(row["Image"]))
                         df = df[df['Image'] != row["Image"]]
                         df = df[df['Mask'] != row["Mask"]]
-        
+
         if len(failed_samples) > 0:
             print("Detected {} completely failed feature extractions".format(str(len(failed_samples))))
             self.error.warning("Detected {} completely failed feature extractions".format(str(len(failed_samples))))
-        
+
         # for csv_file in tqdm(csv_files, desc='Reading csv files'):
         #     df_ = self.read_file(csv_file)
 
@@ -835,32 +823,32 @@ class MissingExperimentDetector:
             df = pd.read_csv(file)
             if len(df.columns) <= 3:
                 df = pd.read_csv(file, sep=";")
-                
+
             if self.extractor == "PyRadiomics":
-                
+
                 if "diagnostics_Versions_PyRadiomics" in df.columns:
                     failed = len(df[df["diagnostics_Versions_PyRadiomics"].isnull()])
                     if failed > 0:
-                        #print("Warning: Failed extraction detected! {}".format(str(file)))
+                        # print("Warning: Failed extraction detected! {}".format(str(file)))
                         self.error.warning("Failed extraction detected! {}".format(str(file)))
-                        #print("Remove failed extraction file!")
+                        # print("Remove failed extraction file!")
                         os.remove(file)
                         return None, df
                 elif "diagnostics_Mask-corrected_Size" in df.columns:
                     failed = len(df[df["diagnostics_Versions_PyRadiomics"].isnull()])
                     if failed > 0:
-                        #print("Warning: Failed extraction detected! {}".format(str(file)))
+                        # print("Warning: Failed extraction detected! {}".format(str(file)))
                         self.error.warning("Failed extraction detected! {}".format(str(file)))
-                        #print("Remove failed extraction file!")
+                        # print("Remove failed extraction file!")
                         os.remove(file)
                         return None, df
                 else:
-                    #print("Warning: Failed extraction detected! {}".format(str(file)))
+                    # print("Warning: Failed extraction detected! {}".format(str(file)))
                     self.error.warning("Failed extraction detected! {}".format(str(file)))
-                    #print("Remove failed extraction file!")
+                    # print("Remove failed extraction file!")
                     os.remove(file)
                     return None, df
-                        
+
         except Exception as e:
             self.logger.error("Error reading file: " + file + " " + str(e))
             return None, None
@@ -881,12 +869,11 @@ class MissingExperimentDetector:
         if len(failed) > 0:
             print("Previous feature extraction failed!")
             self.error.warning("Previous feature extraction failed!")
-        
+
         # 2. check for done experiments in subject folder if there are experiments missing
         if os.path.exists(self.subject_dir):
             # check if all experiments have been processed
             if len(done_experiments_id) != len(self.all_experiments_id):
-                
                 # Check if experiments have already been processed
                 done_experiments, done_experiments_id, failed = self.get_done_experiments_from_subject_folder(
                     done_samples=done_experiments_id,

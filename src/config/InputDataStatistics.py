@@ -18,7 +18,7 @@ from radiomics import *
 import pyvista as pv
 import pywt
 
-from rptk.src.config.Log_generator_config import LogGenerator
+from src.config.Log_generator_config import LogGenerator
 # from rptk.src.feature_filtering.Radiomics_Filter_exe import RadiomicsFilter
 from ydata_profiling import ProfileReport
 from concurrent.futures import ProcessPoolExecutor, as_completed

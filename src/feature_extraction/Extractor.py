@@ -1,71 +1,62 @@
 from __future__ import print_function
 
-import os
-import sys
-from threading import Semaphore
-import psutil
-
-import SimpleITK as sitk
-import numpy as np
-import pandas as pd
-import yaml
-import json
-from iteration_utilities import duplicates
-from p_tqdm import p_map
-import time
+import concurrent.futures
 import datetime
-import logging
-import subprocess as subp
 import gc
-
-from pathlib import Path
-import matplotlib.pyplot as plt
-
-from multiprocessing.pool import Pool
+import glob
 # from loaders import BarLoader, SpinningLoader, TextLoader
 import itertools
+import json
+import logging
+import multiprocessing
+import os
+import re
+import subprocess as subp
+import sys
+import time
+import traceback
+from functools import partial
+from multiprocessing import Pool
+from multiprocessing.pool import Pool
+from pathlib import Path
+from threading import Semaphore
+from threading import Thread
 
-# sys.path.append('src')
+import SimpleITK as sitk
+import matplotlib.pyplot as plt
+import memory_profiler as mp
+import numpy as np
+import pandas as pd
+import psutil
+import radiomics
+import yaml
+from iteration_utilities import duplicates
+from memory_profiler import profile
+from p_tqdm import p_map
+from radiomics import *
+from tqdm import *
+from tqdm.contrib.concurrent import process_map
 
-# from src.feature_filtering.Radiomics_Filter_exe import RadiomicsFilter
-from rptk.src.segmentation_processing.SegProcessor import SegProcessor
-from rptk.src.feature_extraction.Outfile_checker import Outfile_validator, MissingExperimentDetector
-from rptk import rptk
-from rptk.src.config.Log_generator_config import LogGenerator
-from rptk.src.feature_filtering.ibsi_feature_formater import IBSIFeatureFormater
-# from feature_extraction.Outfile_checker import
-
-from rptk.mirp.experimentClass import ExperimentClass
-from rptk.mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass, \
+from mirp.experimentClass import ExperimentClass
+from mirp.imageClass import *
+from mirp.importSettings import SettingsClass, GeneralSettingsClass, ImagePostProcessingClass, \
     ImageInterpolationSettingsClass, RoiInterpolationSettingsClass, ResegmentationSettingsClass, \
     ImagePerturbationSettingsClass, ImageTransformationSettingsClass, FeatureExtractionSettingsClass
+from mirp.roiClass import *
+from src.config.Log_generator_config import LogGenerator
+from src.feature_extraction.Outfile_checker import Outfile_validator, MissingExperimentDetector
+from src.feature_filtering.ibsi_feature_formater import IBSIFeatureFormater
+# from src.feature_filtering.Radiomics_Filter_exe import RadiomicsFilter
+from src.segmentation_processing.SegProcessor import SegProcessor
 
-from rptk.mirp.imageClass import *
-from rptk.mirp.roiClass import *
 
-import radiomics
-from radiomics import *
-
-import memory_profiler as mp
-from memory_profiler import profile
-
+# sys.path.append('src')
+# from feature_extraction.Outfile_checker import
 # import mirp_predict_lib as mirp_predict
 # from mirp_predict_lib import *
-
 # from mirp_pipeline.Preprocessor import Preprocessor
 # from mirp_pipeline.Experiment_setup import *
 
-from tqdm import *
-import glob
-import re
-import multiprocessing
-from functools import partial
-
-from threading import Thread
-from multiprocessing import Pool
-from tqdm.contrib.concurrent import process_map
-import concurrent.futures
-import traceback
 
 class Extractor:
     """
@@ -280,7 +271,8 @@ class Extractor:
         # get data fingerprint
         self.data_fingerprint = pd.read_csv(self.path2fingerprint)
         # put ID to the fingerprint
-        self.data_fingerprint['ID'] = self.data_fingerprint.Image.apply(lambda x: str(os.path.basename(x).split('_')[0]))
+        self.data_fingerprint['ID'] = self.data_fingerprint.Image.apply(
+            lambda x: str(os.path.basename(x).split('_')[0]))
 
         # -
 
@@ -292,7 +284,8 @@ class Extractor:
 
         if "ID" not in self.data_fingerprint.columns:
             # put ID to the fingerprint
-            self.data_fingerprint['ID'] = self.data_fingerprint.Image.apply(lambda x: str(os.path.basename(x).split('_')[0]))
+            self.data_fingerprint['ID'] = self.data_fingerprint.Image.apply(
+                lambda x: str(os.path.basename(x).split('_')[0]))
 
         # get num bins upper (95.0%) and lower quantile (5.0%)
         min_bin_number, max_bin_number = np.quantile(self.data_fingerprint['Number_of_bins'].values, [0.05, 0.95])
@@ -312,8 +305,8 @@ class Extractor:
         Get all information for extraction from csv file
         :parameter str: path2csv: path to csv file with image and segmentation paths
         """
-        #loader = SpinningLoader(text="Reading CSV file")
-        
+        # loader = SpinningLoader(text="Reading CSV file")
+
         self.logger.info("Reading CSV file.")
         # print("Reading CSV file.")
 
@@ -344,9 +337,9 @@ class Extractor:
                           error=self.error,
                           out_path=self.out_path + "extracted_features/",
                           RunID=self.RunID).check_format(df=df)
-        
-        #loader.start()
-        
+
+        # loader.start()
+
         only_nan_in_columns = df.loc[:, df.isnull().all()].columns.tolist()
 
         if len(only_nan_in_columns) > 0:
@@ -379,14 +372,14 @@ class Extractor:
         # df.drop(index=df_mask_image_transform.index.values.tolist(), inplace=True)
         if "Image_Transformation" in df.columns:
             if ("N4BF_normalized" in df["Image_Transformation"].values) or (
-                    "Z-score_normalized" in df["Image_Transformation"].values):
+                "Z-score_normalized" in df["Image_Transformation"].values):
                 df = self.add_normalized_image_transformation_prefix(df=df)
 
         self.logger.info("Size of Data: " + str(df.shape))
 
         # self.logger.info("Removing Unnamed Columns:", )
-        #loader.stop()
-        
+        # loader.stop()
+
         return df
 
     def drop_columns_by_keyword(self, df, keyword="diagnostics_Mask-corrected"):
@@ -405,7 +398,7 @@ class Extractor:
         cols_to_drop = [col for col in df.columns if keyword in col]
 
         if cols_to_drop:
-            print(f"Dropping {len(cols_to_drop)} columns containing {keyword}: {cols_to_drop}")#
+            print(f"Dropping {len(cols_to_drop)} columns containing {keyword}: {cols_to_drop}")  #
             self.error.warning(f"Dropping {len(cols_to_drop)} columns containing {keyword}: {cols_to_drop}")
             df = df.drop(columns=cols_to_drop)
 
@@ -435,22 +428,24 @@ class Extractor:
         change_extraction_setting = False
 
         # Default
-        base_discretisation_method = self.extractor_setting["feature_extraction_parameters"]["base_discretisation_method"]
-        base_discretisation_n_bins = self.extractor_setting["feature_extraction_parameters"]["base_discretisation_bin_number"]
+        base_discretisation_method = self.extractor_setting["feature_extraction_parameters"][
+            "base_discretisation_method"]
+        base_discretisation_n_bins = self.extractor_setting["feature_extraction_parameters"][
+            "base_discretisation_bin_number"]
         ivh_discretisation_method = self.extractor_setting["feature_extraction_parameters"]["ivh_discretisation_method"]
-        ivh_discretisation_n_bins = self.extractor_setting["feature_extraction_parameters"]["ivh_discretisation_bin_number"]
+        ivh_discretisation_n_bins = self.extractor_setting["feature_extraction_parameters"][
+            "ivh_discretisation_bin_number"]
 
         # Get optimal Feature computation settings
         if self.self_optimize:
-            
+
             # check if ID is a number and check if it is the same as the ID from the Image/Mask
             if str(experiment["ID"]).isnumeric():
-                img_ID =  str(os.path.basename(experiment["Image"]).split('_')[0])
+                img_ID = str(os.path.basename(experiment["Image"]).split('_')[0])
                 if img_ID != experiment["ID"]:
                     experiment["ID"] = str(img_ID)
-            
+
             # enable normalization on imaging
-            
 
             # optimize pixel dicretization based on number of bins in ROI
             number_of_bins = int(self.data_fingerprint.loc[
@@ -496,7 +491,8 @@ class Extractor:
                 base_discretisation_bin_width=base_discretisation_n_bins,
                 base_discretisation_n_bins=base_discretisation_n_bins,
                 ivh_discretisation_method=ivh_discretisation_method,
-                ivh_discretisation_bin_width=float(self.extractor_setting["feature_extraction_parameters"]["ivh_discretisation_bin_number"]),
+                ivh_discretisation_bin_width=float(
+                    self.extractor_setting["feature_extraction_parameters"]["ivh_discretisation_bin_number"]),
                 ivh_discretisation_n_bins=ivh_discretisation_n_bins,
                 glcm_distance=self.extractor_setting["feature_extraction_parameters"]["glcm_distance"],
                 glcm_spatial_method=self.extractor_setting["feature_extraction_parameters"]["glcm_spatial_method"],
@@ -506,7 +502,8 @@ class Extractor:
                 ngtdm_spatial_method=self.extractor_setting["feature_extraction_parameters"]["ngtdm_spatial_method"],
                 ngldm_spatial_method=self.extractor_setting["feature_extraction_parameters"]["ngldm_spatial_method"],
                 ngldm_distance=self.extractor_setting["feature_extraction_parameters"]["ngldm_distance"],
-                ngldm_difference_levels=self.extractor_setting["feature_extraction_parameters"]["ngldm_difference_level"],
+                ngldm_difference_levels=self.extractor_setting["feature_extraction_parameters"][
+                    "ngldm_difference_level"],
             )
 
         else:
@@ -516,10 +513,14 @@ class Extractor:
                 no_approximation=self.extractor_setting["feature_extraction_parameters"]["no_approximation"],
                 ibsi_compliant=self.extractor_setting["feature_extraction_parameters"]["ibsi_compliant"],
                 base_feature_families=self.extractor_setting["feature_extraction_parameters"]["base_feature_families"],
-                base_discretisation_method=self.extractor_setting["feature_extraction_parameters"]["base_discretisation_method"],
-                base_discretisation_bin_width=self.extractor_setting["feature_extraction_parameters"]["base_discretisation_bin_number"],
-                ivh_discretisation_method=self.extractor_setting["feature_extraction_parameters"]["ivh_discretisation_method"],
-                ivh_discretisation_bin_width=float(self.extractor_setting["feature_extraction_parameters"]["ivh_discretisation_bin_number"]),
+                base_discretisation_method=self.extractor_setting["feature_extraction_parameters"][
+                    "base_discretisation_method"],
+                base_discretisation_bin_width=self.extractor_setting["feature_extraction_parameters"][
+                    "base_discretisation_bin_number"],
+                ivh_discretisation_method=self.extractor_setting["feature_extraction_parameters"][
+                    "ivh_discretisation_method"],
+                ivh_discretisation_bin_width=float(
+                    self.extractor_setting["feature_extraction_parameters"]["ivh_discretisation_bin_number"]),
                 glcm_distance=self.extractor_setting["feature_extraction_parameters"]["glcm_distance"],
                 glcm_spatial_method=self.extractor_setting["feature_extraction_parameters"]["glcm_spatial_method"],
                 glrlm_spatial_method=self.extractor_setting["feature_extraction_parameters"]["glrlm_spatial_method"],
@@ -528,7 +529,8 @@ class Extractor:
                 ngtdm_spatial_method=self.extractor_setting["feature_extraction_parameters"]["ngtdm_spatial_method"],
                 ngldm_spatial_method=self.extractor_setting["feature_extraction_parameters"]["ngldm_spatial_method"],
                 ngldm_distance=self.extractor_setting["feature_extraction_parameters"]["ngldm_distance"],
-                ngldm_difference_levels=self.extractor_setting["feature_extraction_parameters"]["ngldm_difference_level"],
+                ngldm_difference_levels=self.extractor_setting["feature_extraction_parameters"][
+                    "ngldm_difference_level"],
             )
 
         # self.rptk_config
@@ -558,7 +560,8 @@ class Extractor:
             if self.extractor_setting["resegmentation_parameters"]["resegmentation_method"] == "threshold":
                 resegmentation_settings = ResegmentationSettingsClass(
                     resegmentation_method=self.extractor_setting["resegmentation_parameters"]["resegmentation_method"],
-                    resegmentation_intensity_range=self.extractor_setting["resegmentation_parameters"]["resegmentation_intensity_range"],
+                    resegmentation_intensity_range=self.extractor_setting["resegmentation_parameters"][
+                        "resegmentation_intensity_range"],
                     resegmentation_sigma=self.extractor_setting["resegmentation_parameters"]["resegmentation_sigma"]
                 )
             elif self.extractor_setting["resegmentation_parameters"]["resegmentation_method"] == "range":
@@ -571,8 +574,10 @@ class Extractor:
                     # self.logger.info("Do not perform Resegmentation for MIRP extraction!")
                     resegmentation_settings = ResegmentationSettingsClass()
                 else:
-                    self.error.error("Can not perform Resegmentation for MIRP extraction! Unknown resegmentation method in MIRP Settings! Please select threshold or range.")
-                    raise ValueError("Can not perform Resegmentation for MIRP extraction! Unknown resegmentation method in MIRP Settings! Please select threshold or range.")
+                    self.error.error(
+                        "Can not perform Resegmentation for MIRP extraction! Unknown resegmentation method in MIRP Settings! Please select threshold or range.")
+                    raise ValueError(
+                        "Can not perform Resegmentation for MIRP extraction! Unknown resegmentation method in MIRP Settings! Please select threshold or range.")
         else:
             # self.logger.info("Do not perform Resegmentation for MIRP extraction!")
             resegmentation_settings = ResegmentationSettingsClass()
@@ -580,12 +585,13 @@ class Extractor:
         # Generate roi interpolation settings
         roi_interpolate_settings = RoiInterpolationSettingsClass(
             roi_spline_order=self.extractor_setting["roi_interpolate_parameters"]["roi_spline_order"],
-            roi_interpolation_mask_inclusion_threshold=self.extractor_setting["roi_interpolate_parameters"]["roi_interpolation_mask_inclusion_threshold"],
+            roi_interpolation_mask_inclusion_threshold=self.extractor_setting["roi_interpolate_parameters"][
+                "roi_interpolation_mask_inclusion_threshold"],
         )
 
         image_processing_setting = ImagePostProcessingClass(
             intensity_normalisation=self.extractor_setting["image_postprocessing"]["intensity_normalisation"]
-            )
+        )
 
         # Summarize settings
         settings = SettingsClass(
@@ -601,13 +607,13 @@ class Extractor:
 
         return settings
 
-    def generate_mirp_experiments(self): # TODO Adapt to new mirp version
+    def generate_mirp_experiments(self):  # TODO Adapt to new mirp version
         """
         Generates a list of experiments for the MIRP pipeline.
         """
-        #loader = SpinningLoader(text="Config MIRP extraction")
-        #loader.start()
-        
+        # loader = SpinningLoader(text="Config MIRP extraction")
+        # loader.start()
+
         experiments = []
 
         self.logger.info("Generating experiments for MIRP Pipeline.")
@@ -642,14 +648,14 @@ class Extractor:
                 compute_features=self.extractor_setting["experiment_parameters"]["compute_features"],
                 extract_images=self.extractor_setting["experiment_parameters"]["extract_images"],
                 plot_images=self.extractor_setting["experiment_parameters"]["plot_images"],
-                keep_images_in_memory=False # self.extractor_setting["experiment_parameters"]["keep_images_in_memory"]
+                keep_images_in_memory=False  # self.extractor_setting["experiment_parameters"]["keep_images_in_memory"]
             )
 
             experiments.append(experiment)
         del experiment
-        
-        #loader.stop()
-        
+
+        # loader.stop()
+
         return experiments
 
     def execute_mirp_experiment(self, experiment):
@@ -719,7 +725,7 @@ class Extractor:
                     if idx.startswith(img_base) and idx.endswith(msk_base):
                         if (img_base + "_" + msk_base) == idx:
                             df.loc[(df["Raw_Image"] == img) & (
-                                    df["Raw_Mask"] == msk), "id_subject"] = img_base + "_" + msk_base
+                                df["Raw_Mask"] == msk), "id_subject"] = img_base + "_" + msk_base
 
                             result = df.loc[(df["Raw_Image"] == img) & (df["Raw_Mask"] == msk), "id_subject"]
 
@@ -796,10 +802,10 @@ class Extractor:
             print("Synchronizing MIRP extraction index for concatenation!")
 
             experiments.index.name = df.index.name
-            
-        #df.to_csv(self.out_path + "/extracted_features/tmp/index_config.csv")
-        #experiments.to_csv(self.out_path + "/extracted_features/tmp/experiments.csv")
-        
+
+        # df.to_csv(self.out_path + "/extracted_features/tmp/index_config.csv")
+        # experiments.to_csv(self.out_path + "/extracted_features/tmp/experiments.csv")
+
         # get all related columns for the experiments that are done
         experiments = pd.concat([df, experiments], axis=1)
 
@@ -868,7 +874,7 @@ class Extractor:
                 done_experiments = self.make_image_mask_index(done_experiments)
             else:
                 self.error.warning("Wrong configuration of feature extraction!")
-        
+
         if len(done_experiments) > 0:
             # sync done experiments with config file
             if "Image" not in done_experiments.columns:
@@ -879,7 +885,7 @@ class Extractor:
 
             for i, row in done_experiments.iterrows():
                 id_ = os.path.basename(row["Image"])[:-len(".nii.gz")] + "_" + os.path.basename(row["Mask"])[
-                                                                            :-len(".nii.gz")]
+                                                                               :-len(".nii.gz")]
                 done_samples.append(id_)
 
         if self.extractor == "MIRP":
@@ -1031,7 +1037,7 @@ class Extractor:
                         missing_experiments.append(future.result())
                         gc.collect()  # Force garbage collection
             del futures
-            
+
         return missing_experiments
 
     def concat_csv_file_to_df(self, csv_file_path: str, df: pd.DataFrame = pd.DataFrame(), ignore_index=True):
@@ -1067,22 +1073,23 @@ class Extractor:
 
         df = pd.DataFrame()
         with Pool(processes=self.n_cpu) as pool:
-                # Use tqdm with imap to show progress
-                for result in tqdm(pool.imap(self.concat_csv_file_to_df, csv_files), total=len(csv_files), desc="Concatenating feature files"):
-                    df = pd.concat([df, result], ignore_index=ignore_index)
+            # Use tqdm with imap to show progress
+            for result in tqdm(pool.imap(self.concat_csv_file_to_df, csv_files), total=len(csv_files),
+                               desc="Concatenating feature files"):
+                df = pd.concat([df, result], ignore_index=ignore_index)
 
         self.logger.info("Concatenated all csv files from extraction into one csv file:" + str(df.shape))
         print("Concatenated all csv files from extraction into one csv file:" + str(df.shape))
-        
+
         # drop duplicated samples
         if "Image" in df.columns:
             if df.duplicated(subset=['Image', 'Mask']).any():
                 ewdf = df.drop_duplicates(subset=['Image', 'Mask'], keep='first')  # .reset_index(drop=True)
                 df = ewdf
         else:
-            
-            df.to_csv(self.out_path +"/extracted_features/tmp/features_without_config.csv")
-            
+
+            df.to_csv(self.out_path + "/extracted_features/tmp/features_without_config.csv")
+
             # get configuration
             df = self.add_config_cols_to_df(experiments=df, df=None)
 
@@ -1129,7 +1136,7 @@ class Extractor:
             return path.str.split('/').str[-1].str.replace('.nii.gz', '')
         else:
             raise ValueError("Unsupported type. Path must be a str or pd.Series.")
-    
+
     @staticmethod
     def extract_image_filename(path):
         """
@@ -1137,7 +1144,7 @@ class Extractor:
         :param path: path to file in .nii.gz format
         :return: filename
         """
-        pattern = r'_nan_roiL_\d+_roiT_\d+_roiN_\d+_' # pattern to remove
+        pattern = r'_nan_roiL_\d+_roiT_\d+_roiN_\d+_'  # pattern to remove
 
         if isinstance(path, str):  # Single string case
             filename = path.split('/')[-1]
@@ -1150,7 +1157,6 @@ class Extractor:
                     .str.replace('.nii.gz', '', regex=True))  # Remove file extension
         else:
             raise ValueError("Unsupported type. Path must be a str or pd.Series.")
-        
 
     def process_mirp(self):
         """
@@ -1201,18 +1207,19 @@ class Extractor:
             self.df = self.get_info_from_csv(path2csv=self.path2confCSV)
 
         # add all configs from the preprocessing file to the extraction file
-        
-            
+
         mirp_preprocess = self.df.copy()
         # generate unique ID for each subject
-        mirp_preprocess['id_subject'] = mirp_preprocess.apply(lambda row: f"{Extractor.extract_image_filename(row['Image'])}_{Extractor.extract_filename(row['Mask'])}", axis=1)
-        
+        mirp_preprocess['id_subject'] = mirp_preprocess.apply(
+            lambda row: f"{Extractor.extract_image_filename(row['Image'])}_{Extractor.extract_filename(row['Mask'])}",
+            axis=1)
+
         if "ID" not in mirp_preprocess.columns:
             mirp_preprocess['ID'] = mirp_preprocess['id_subject'].str.split('_').str[0]
 
         mirp_preprocess = mirp_preprocess.set_index('id_subject')
-        
-        if len(done_experiments) > 0:       
+
+        if len(done_experiments) > 0:
             if "id_subject" in done_experiments.columns:
                 done_experiments = done_experiments.set_index('id_subject')
             elif done_experiments.index.name != "id_subject":
@@ -1220,10 +1227,9 @@ class Extractor:
                 print("Index name is not id_subject!")
 
             # done_experiments = pd.concat([mirp_preprocess, done_experiments], axis=1)
-            
+
             if not os.path.exists(self.outfile):
                 done_experiments.to_csv(self.outfile)
-
 
                 done_experiments_with_config = self.add_config_cols_to_mirp(result=done_experiments.copy())
 
@@ -1231,15 +1237,14 @@ class Extractor:
                 done_experiments_with_config.to_csv(self.outfile)
                 self.logger.info("Saved collected done experiments to " + str(self.outfile))
 
-        
         if len(missing_experiment_ids) > 0:
-            
+
             for id in tqdm(missing_experiment_ids, desc="Setting up MIRP experiments", unit="sample"):
                 for experiment in self.experiments:
                     if id == experiment.subject:
                         missing_experiments_4_exe.append(experiment)
                         break
-            
+
             if len(missing_experiments_4_exe) == 0:
                 self.error.error("Format error in Image/Seg config file! Delete the output from previous runs!")
 
@@ -1331,7 +1336,7 @@ class Extractor:
             raise ValueError("Feature extraction failed!")
 
         if "id_subject" not in result.columns:
-            
+
             if ("Image" not in result.columns) or ("Mask" not in result.columns):
                 if self.df.index.name != result.index.name:
                     if result.index.name in self.df.columns:
@@ -1353,17 +1358,21 @@ class Extractor:
                                 self.df = self.df.set_index("id_subject", drop=False)
                             else:
                                 if ("Image" in self.df.columns) and ("Mask" in self.df.columns):
-                                    self.df['id_subject'] = self.df.apply(lambda row: f"{Extractor.extract_image_filename(row['Image'])}_{Extractor.extract_filename(row['Mask'])}", axis=1)
+                                    self.df['id_subject'] = self.df.apply(lambda
+                                                                              row: f"{Extractor.extract_image_filename(row['Image'])}_{Extractor.extract_filename(row['Mask'])}",
+                                                                          axis=1)
                                     self.df = self.df.set_index("id_subject", drop=False)
                                 else:
                                     self.error.error("No Image and Mask column found in preprocessing csv file!")
                                     raise ValueError("No Image and Mask column found in preprocessing csv file!")
 
             result = pd.concat([result, self.df.copy()[self.df.index.isin(result.index)]], axis=1)
-        
+
             if ("Image" in result.columns) and ("Mask" in result.columns):
                 # ID generated from Image and Mask file name
-                result['id_subject'] = result.apply(lambda row: f"{Extractor.extract_image_filename(row['Image'])}_{Extractor.extract_filename(row['Mask'])}", axis=1)
+                result['id_subject'] = result.apply(lambda
+                                                        row: f"{Extractor.extract_image_filename(row['Image'])}_{Extractor.extract_filename(row['Mask'])}",
+                                                    axis=1)
 
             else:
                 self.error.error("No Image and Mask column found in csv file!")
@@ -1450,7 +1459,7 @@ class Extractor:
                     result.drop([col], axis=1, inplace=True)
 
             # get all columns containing Unnamed in the name
-            unnamed_features = rptk.get_unnamed_cols(result)
+            unnamed_features = get_unnamed_cols(result)
             if len(unnamed_features) > 0:
                 self.logger.info(
                     "There are " + str(len(unnamed_features)) + " features containing Unnamed in the name!")
@@ -1479,13 +1488,16 @@ class Extractor:
                 # drop all experiments (rows) which are having nan values (not done yet)
                 # result = result.dropna()
         else:
-            print(f"Error: No matching index found between configuration file and mirp extraction! {result.index[0]} not in Preprocessing!")
-            self.error.error("No matching index found between configuration file and mirp extraction! {result.index[0]} not in {self.df.index}!")
+            print(
+                f"Error: No matching index found between configuration file and mirp extraction! {result.index[0]} not in Preprocessing!")
+            self.error.error(
+                "No matching index found between configuration file and mirp extraction! {result.index[0]} not in {self.df.index}!")
             self.error.error("Config file index: " + str(self.df.index[0]))
             self.error.error("MIRP extraction index: " + str(result.index[0]))
-            raise ValueError("No matching index found between configuration file and mirp extraction! {result.index[0]} not in Preprocessing !")
-        
-        if  self.df.index.name != result.index.name:
+            raise ValueError(
+                "No matching index found between configuration file and mirp extraction! {result.index[0]} not in Preprocessing !")
+
+        if self.df.index.name != result.index.name:
             preprocessing_index = self.df.index.name
             if preprocessing_index in result.columns:
                 result = result.set_index(preprocessing_index, drop=False)
@@ -1493,12 +1505,10 @@ class Extractor:
         # put NAN back to columns
         for col in columns_should_have_nan:
             result[col] = result[col].replace(0, np.nan)
-        
+
         return result
 
     def generating_mirp_output_file(self):
-
-        
 
         # generating output files and checking for
         result, missing_detector = self.process_mirp()
@@ -1511,7 +1521,7 @@ class Extractor:
         Executes the MIRP pipeline.
         """
         print("Configure MIPR Extraction ...")
-        
+
         self.logger.info("Configuration of MIRP Feature Extraction:" +
                          "\n\t\t\t\t\t\t\t\t\t\tInput: " + self.path2confCSV +
                          "\n\t\t\t\t\t\t\t\t\t\tOutput directory: " + self.extracted_features_dir +
@@ -1523,7 +1533,7 @@ class Extractor:
                          )
 
         # Get Extractor configuration
-        self.extractor_setting = self.get_extractor_config() 
+        self.extractor_setting = self.get_extractor_config()
 
         # self.outfile = self.out_path + "mirp_extraction.csv"
         # result = pd.DataFrame()
@@ -1670,21 +1680,21 @@ class Extractor:
         :return: True if extraction was successful, False
         """
 
-
         py_formated = pd.DataFrame()
         try:
             self.logger.info("Extracting Features from " + str(experiment["Image"]) + " and " + str(experiment["Mask"]))
 
-            #if experiment["ROI_Label"] != 1:
+            # if experiment["ROI_Label"] != 1:
             #    py_result = py_extractor.execute(imageFilepath=str(experiment["Image"]), maskFilepath=str(experiment["Mask"]), label=int(experiment["ROI_Label"]))
-            #else:
-            py_result = py_extractor.execute(imageFilepath=str(experiment["Image"]), maskFilepath=str(experiment["Mask"]))
+            # else:
+            py_result = py_extractor.execute(imageFilepath=str(experiment["Image"]),
+                                             maskFilepath=str(experiment["Mask"]))
 
             py_formated = pd.DataFrame([py_result])
 
         except Exception as exc:
             return False, exc
-        
+
         return True, py_formated
 
     def extract_pyradiomics(self, py_extractor, experiment, exp):
@@ -1694,31 +1704,37 @@ class Extractor:
         # self.logger.info("Extract Features from experiment {}".format(str(experiment["ID"])))
 
         status, result_ = self.try_pyradiomics_extraction(experiment, py_extractor)
-        
+
         if not status:
             if "Image/Mask geometry mismatch." in str(result_):
-                self.error.warning("Trying to correct Image/Mask geometry mismatch between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
-                print("Trying to correct Image/Mask geometry mismatch between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
+                self.error.warning("Trying to correct Image/Mask geometry mismatch between {} and {}: {}".format(
+                    str(experiment["Image"]),
+                    str(experiment["Mask"]),
+                    str(result_)))
+                print("Trying to correct Image/Mask geometry mismatch between {} and {}: {}".format(
+                    str(experiment["Image"]),
+                    str(experiment["Mask"]),
+                    str(result_)))
 
                 py_extractor.settings["correctMask"] = True
                 py_extractor.settings["geometryTolerance"] = 1e-4
 
                 # setting correctMask to True for resample the mask to image reference space
                 status, result_ = self.try_pyradiomics_extraction(experiment, py_extractor)
-                
+
                 if not status:
 
                     if "Bounding box of ROI is larger than image space." in str(result_):
-                        self.error.warning("Trying to correct Bounding box of ROI is larger than image space between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
-                        print("Trying to correct Bounding box of ROI is larger than image space between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
+                        self.error.warning(
+                            "Trying to correct Bounding box of ROI is larger than image space between {} and {}: {}".format(
+                                str(experiment["Image"]),
+                                str(experiment["Mask"]),
+                                str(result_)))
+                        print(
+                            "Trying to correct Bounding box of ROI is larger than image space between {} and {}: {}".format(
+                                str(experiment["Image"]),
+                                str(experiment["Mask"]),
+                                str(result_)))
 
                         py_extractor.settings["resampledPixelSpacing"] = None
                         py_extractor.settings["interpolator"] = None
@@ -1729,52 +1745,64 @@ class Extractor:
 
                         if not status:
                             self.error.error("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
+                                                                                           str(experiment["Mask"]),
+                                                                                           str(result_)))
 
                             print("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
+                                                                                str(experiment["Mask"]),
+                                                                                str(result_)))
 
-                            failed = pd.DataFrame({"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
+                            failed = pd.DataFrame(
+                                {"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]},
+                                index=[0])
                             if self.failed_extractions.empty:
                                 self.failed_extractions = failed
                             # if Image and Mask are already in the failed extraction in the same row
-                            elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (self.failed_extractions["Mask"] == experiment["Mask"])].empty:
-                                self.failed_extractions = pd.concat([self.failed_extractions, failed], ignore_index=True)
+                            elif self.failed_extractions.loc[
+                                (self.failed_extractions["Image"] == experiment["Image"]) & (
+                                    self.failed_extractions["Mask"] == experiment["Mask"])].empty:
+                                self.failed_extractions = pd.concat([self.failed_extractions, failed],
+                                                                    ignore_index=True)
                         else:
                             py_formated = result_
 
                     elif "Resegmentation excluded too many voxels" in str(result_):
-                        self.error.warning("Trying to correct Resegmentation excluded too many voxels between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
-                        print("Trying to correct Resegmentation excluded too many voxels between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
+                        self.error.warning(
+                            "Trying to correct Resegmentation excluded too many voxels between {} and {}: {}".format(
+                                str(experiment["Image"]),
+                                str(experiment["Mask"]),
+                                str(result_)))
+                        print("Trying to correct Resegmentation excluded too many voxels between {} and {}: {}".format(
+                            str(experiment["Image"]),
+                            str(experiment["Mask"]),
+                            str(result_)))
 
                         py_extractor.settings["resegmentShape"] = False
                         py_extractor.settings["resegmentRange"] = None
                         py_extractor.settings["correctMask"] = False
-                        
 
                         status, result_ = self.try_pyradiomics_extraction(experiment, py_extractor)
 
                         if not status:
                             self.error.error("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
+                                                                                           str(experiment["Mask"]),
+                                                                                           str(result_)))
 
                             print("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
+                                                                                str(experiment["Mask"]),
+                                                                                str(result_)))
 
-                            failed = pd.DataFrame({"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
+                            failed = pd.DataFrame(
+                                {"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]},
+                                index=[0])
                             if self.failed_extractions.empty:
                                 self.failed_extractions = failed
                             # if Image and Mask are already in the failed extraction in the same row
-                            elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (self.failed_extractions["Mask"] == experiment["Mask"])].empty:
-                                self.failed_extractions = pd.concat([self.failed_extractions, failed], ignore_index=True)
+                            elif self.failed_extractions.loc[
+                                (self.failed_extractions["Image"] == experiment["Image"]) & (
+                                    self.failed_extractions["Mask"] == experiment["Mask"])].empty:
+                                self.failed_extractions = pd.concat([self.failed_extractions, failed],
+                                                                    ignore_index=True)
                         else:
                             py_formated = result_
 
@@ -1782,18 +1810,21 @@ class Extractor:
 
                     else:
                         self.error.error("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                    str(experiment["Mask"]),
-                                                                                    str(result_)))
+                                                                                       str(experiment["Mask"]),
+                                                                                       str(result_)))
 
                         print("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                        str(experiment["Mask"]),
-                                                                                        str(result_)))
+                                                                            str(experiment["Mask"]),
+                                                                            str(result_)))
 
-                        failed = pd.DataFrame({"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
+                        failed = pd.DataFrame(
+                            {"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]},
+                            index=[0])
                         if self.failed_extractions.empty:
                             self.failed_extractions = failed
                         # if Image and Mask are already in the failed extraction in the same row
-                        elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (self.failed_extractions["Mask"] == experiment["Mask"])].empty:
+                        elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (
+                            self.failed_extractions["Mask"] == experiment["Mask"])].empty:
                             self.failed_extractions = pd.concat([self.failed_extractions, failed], ignore_index=True)
 
                         py_result = pd.DataFrame()
@@ -1801,12 +1832,15 @@ class Extractor:
                     py_formated = result_
 
             elif "Bounding box of ROI is larger than image space." in str(result_):
-                self.error.warning("Trying to correct Bounding box of ROI is larger than image space between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
-                print("Trying to correct Bounding box of ROI is larger than image space between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
+                self.error.warning(
+                    "Trying to correct Bounding box of ROI is larger than image space between {} and {}: {}".format(
+                        str(experiment["Image"]),
+                        str(experiment["Mask"]),
+                        str(result_)))
+                print("Trying to correct Bounding box of ROI is larger than image space between {} and {}: {}".format(
+                    str(experiment["Image"]),
+                    str(experiment["Mask"]),
+                    str(result_)))
 
                 py_extractor.settings["resampledPixelSpacing"] = None
                 py_extractor.settings["interpolator"] = None
@@ -1817,67 +1851,75 @@ class Extractor:
 
                 if not status:
                     self.error.error("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
+                                                                                   str(experiment["Mask"]),
+                                                                                   str(result_)))
 
                     print("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
+                                                                        str(experiment["Mask"]),
+                                                                        str(result_)))
 
-                    failed = pd.DataFrame({"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
+                    failed = pd.DataFrame(
+                        {"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
                     if self.failed_extractions.empty:
                         self.failed_extractions = failed
                     # if Image and Mask are already in the failed extraction in the same row
-                    elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (self.failed_extractions["Mask"] == experiment["Mask"])].empty:
+                    elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (
+                        self.failed_extractions["Mask"] == experiment["Mask"])].empty:
                         self.failed_extractions = pd.concat([self.failed_extractions, failed], ignore_index=True)
 
             elif "Resegmentation excluded too many voxels" in str(result_):
-                self.error.warning("Trying to correct Resegmentation excluded too many voxels between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
-                print("Trying to correct Resegmentation excluded too many voxels between {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
+                self.error.warning(
+                    "Trying to correct Resegmentation excluded too many voxels between {} and {}: {}".format(
+                        str(experiment["Image"]),
+                        str(experiment["Mask"]),
+                        str(result_)))
+                print("Trying to correct Resegmentation excluded too many voxels between {} and {}: {}".format(
+                    str(experiment["Image"]),
+                    str(experiment["Mask"]),
+                    str(result_)))
 
                 py_extractor.settings["resegmentShape"] = False
                 py_extractor.settings["resegmentRange"] = None
                 py_extractor.settings["correctMask"] = False
-                
-                
+
                 status, result_ = self.try_pyradiomics_extraction(experiment, py_extractor)
 
                 if not status:
                     self.error.error("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
+                                                                                   str(experiment["Mask"]),
+                                                                                   str(result_)))
 
                     print("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
+                                                                        str(experiment["Mask"]),
+                                                                        str(result_)))
 
-                    failed = pd.DataFrame({"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
+                    failed = pd.DataFrame(
+                        {"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
                     if self.failed_extractions.empty:
                         self.failed_extractions = failed
                     # if Image and Mask are already in the failed extraction in the same row
-                    elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (self.failed_extractions["Mask"] == experiment["Mask"])].empty:
+                    elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (
+                        self.failed_extractions["Mask"] == experiment["Mask"])].empty:
                         self.failed_extractions = pd.concat([self.failed_extractions, failed], ignore_index=True)
                 else:
                     py_formated = result_
-            
+
             else:
                 self.error.error("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                            str(experiment["Mask"]),
-                                                                            str(result_)))
+                                                                               str(experiment["Mask"]),
+                                                                               str(result_)))
 
                 print("Failed extraction from {} and {}: {}".format(str(experiment["Image"]),
-                                                                                str(experiment["Mask"]),
-                                                                                str(result_)))
+                                                                    str(experiment["Mask"]),
+                                                                    str(result_)))
 
-                failed = pd.DataFrame({"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
+                failed = pd.DataFrame(
+                    {"ID": experiment["ID"], "Image": experiment["Image"], "Mask": experiment["Mask"]}, index=[0])
                 if self.failed_extractions.empty:
                     self.failed_extractions = failed
                 # if Image and Mask are already in the failed extraction in the same row
-                elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (self.failed_extractions["Mask"] == experiment["Mask"])].empty:
+                elif self.failed_extractions.loc[(self.failed_extractions["Image"] == experiment["Image"]) & (
+                    self.failed_extractions["Mask"] == experiment["Mask"])].empty:
                     self.failed_extractions = pd.concat([self.failed_extractions, failed], ignore_index=True)
 
                 py_result = pd.DataFrame()
@@ -1939,11 +1981,11 @@ class Extractor:
             if ("Raw_Image" in self.df.columns) and ("Raw_Mask" in self.df.columns):
                 number_of_bins = self.data_fingerprint.loc[
                     (self.data_fingerprint["Image"] == str(experiment["Raw_Image"])) & (
-                                self.data_fingerprint["Mask"] == str(experiment["Raw_Mask"])), "Number_of_bins"].values
+                        self.data_fingerprint["Mask"] == str(experiment["Raw_Mask"])), "Number_of_bins"].values
             else:
                 number_of_bins = self.data_fingerprint.loc[
                     (self.data_fingerprint["Image"] == str(experiment["Image"])) & (
-                                self.data_fingerprint["Mask"] == str(experiment["Mask"])), "Number_of_bins"].values
+                        self.data_fingerprint["Mask"] == str(experiment["Mask"])), "Number_of_bins"].values
 
             # print("Number of Bins {} with bin width of {}.".format(str(number_of_bins), str(self.extractor_setting["setting"]["binWidth"])))
             # print(self.data_fingerprint.loc[(self.data_fingerprint["Image"] == str(experiment["Image"])) & (self.data_fingerprint["Mask"] == str(experiment["Mask"])), "Number_of_bins"].values)
@@ -1975,7 +2017,8 @@ class Extractor:
                 py_extractor.settings["binWidth"] = None
 
         if not self.resegmentation:
-            self.logger.info("Do not perform Resegmentation for PyRadiomics extraction. Reset resegmentRange and resegmentShape!")
+            self.logger.info(
+                "Do not perform Resegmentation for PyRadiomics extraction. Reset resegmentRange and resegmentShape!")
             py_extractor.settings["resegmentRange"] = None
             py_extractor.settings["resegmentShape"] = False
 
@@ -1989,11 +2032,11 @@ class Extractor:
             print("Failed experiment. Try without resegmentation ...")
             self.error.warning("Failed experiment. Try without resegmentation ... ")
             self.error.warning(ex.__class__.__name__, str(ex), traceback.format_exc())
-            
+
             # Resegmentation might not be feasable for this sample - retry without resegmentation
             print(ex.__class__.__name__, str(ex), traceback.format_exc())
             print("Trying to repeat extraction with changed settings.")
-            
+
             if extractor_setting is not None:
                 if "resegmentShape" in extractor_setting["setting"]:
 
@@ -2004,24 +2047,24 @@ class Extractor:
 
             try:
                 self.extract_pyradiomics(py_extractor=py_extractor,
-                                        experiment=experiment.copy(),
-                                        exp=exp.copy())
+                                         experiment=experiment.copy(),
+                                         exp=exp.copy())
             except Exception as ex:
                 self.error.error(ex.__class__.__name__, str(ex))
                 raise Exception(ex.__class__.__name__, str(ex))
 
-
             if "ID" in exp.columns:
                 self.error.warning("Resegmentation disabled for experiment " + str(experiment["ID"]) + " " +
-                                 str(os.path.basename(experiment["Image"])) + " " +
-                                 str(os.path.basename(experiment["Mask"])) + ": " + str(ex))
+                                   str(os.path.basename(experiment["Image"])) + " " +
+                                   str(os.path.basename(experiment["Mask"])) + ": " + str(ex))
                 self.error.warning(traceback.format_exc())
-                #raise TypeError("Error processing experiment " + str(experiment["ID"]) + " " +
+                # raise TypeError("Error processing experiment " + str(experiment["ID"]) + " " +
                 #                str(os.path.basename(experiment["Image"])) + " " +
                 #                str(os.path.basename(experiment["Mask"])) + ": " + str(ex))
 
             else:
-                self.error.warning("Resegmentation disabled for extracting features from image " + str(experiment["Image"]) + ": " + str(ex))
+                self.error.warning("Resegmentation disabled for extracting features from image " + str(
+                    experiment["Image"]) + ": " + str(ex))
                 self.error.warning(traceback.format_exc())
                 # raise TypeError("Error extracting features from image " + str(experiment["Image"]) + ": " + str(ex))
 
@@ -2074,18 +2117,19 @@ class Extractor:
                     else:
                         for entrie in entries:
                             func(entrie)
-                            
+
                             pbar.update(1)
                             iter += 1
-                            mem_tmp = pd.DataFrame({"Iteration": [str(iter)], "Memory[MB]": [str(psutil.Process().memory_info().rss / 1e6)]})
+                            mem_tmp = pd.DataFrame({"Iteration": [str(iter)],
+                                                    "Memory[MB]": [str(psutil.Process().memory_info().rss / 1e6)]})
 
-                        #chunk_size = self.n_cpu  # Adjust the chunk size based on your memory constraints
+                        # chunk_size = self.n_cpu  # Adjust the chunk size based on your memory constraints
 
-                        #for start in range(0, len(entries), chunk_size):
+                        # for start in range(0, len(entries), chunk_size):
                         #    chunk = entries[start:start + chunk_size]
                         #    with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
                         #        futures = {executor.submit(func, row): row for row in chunk}
-                                
+
                         #        for future in concurrent.futures.as_completed(futures):
                         #            mem_tmp = pd.DataFrame({"Iteration": [str(iter)],
                         #                                    "Memory[MB]": [
@@ -2113,7 +2157,6 @@ class Extractor:
 
                         #        if not returning:
                         #            del futures
-                                    
 
                     # Free memory after chunk
                     # del chunk
@@ -2178,9 +2221,8 @@ class Extractor:
 
                                 if not returning:
                                     del futures
-                        
-                        
-                        #with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
+
+                        # with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
 
                         #    for results in executor.map(func, [row for i, row in entries.iterrows()],
                         #                                chunksize=self.n_cpu):
@@ -2203,9 +2245,9 @@ class Extractor:
 
                         #    gc.collect()  # Force garbage collection
                     else:
-                        #for entrie in entries:
+                        # for entrie in entries:
                         #    func(entrie)
-                            
+
                         #    pbar.update(1)
                         #    iter += 1
                         #    mem_tmp = pd.DataFrame({"Iteration": [str(iter)], "Memory[MB]": [str(psutil.Process().memory_info().rss / 1e6)]})
@@ -2219,15 +2261,14 @@ class Extractor:
                                                    index=[str(iter)])
 
                             if not os.path.isfile(mem_consumption_sum_file):
-                                    mem_tmp.to_csv(mem_consumption_sum_file)
+                                mem_tmp.to_csv(mem_consumption_sum_file)
                             else:
                                 with open(mem_consumption_sum_file, 'a') as f:
                                     mem_tmp.to_csv(f, mode='a', header=False)
 
                             gc.collect()  # Force garbage collection
 
-
-                        #with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
+                        # with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
                         #    for results in executor.map(func, [row for i, row in entries.iterrows()], chunksize=1):
                         #        pbar.update(1)
                         #        iter += 1
@@ -2302,9 +2343,9 @@ class Extractor:
         # self.extractor_setting = self.get_extractor_config()
 
         print("Extracting Radiomics features with PyRadiomics ...")
-        
-        #loader = SpinningLoader(text="Config PyRadiomics extraction")
-        #loader.start()
+
+        # loader = SpinningLoader(text="Config PyRadiomics extraction")
+        # loader.start()
         # check if individual optimization of bin size is necessary
         # check if extreme values are included may cause Mem problems!
         if self.data_fingerprint['Number_of_bins'].max() > self.rptk_config["Feature_extraction_config"]["max_num_bin"]:
@@ -2334,9 +2375,9 @@ class Extractor:
             all_experiments_id.append(
                 os.path.basename(row_["Image"])[:-len(".nii.gz")] + "_" + os.path.basename(row_["Mask"])[
                                                                           :-len(".nii.gz")])
-        
-        #loader.stop()
-        
+
+        # loader.stop()
+
         Missing_detector = MissingExperimentDetector(extractor=self.extractor,  # Either PyRadiomics or MIRP
                                                      out_path=self.extracted_features_dir,  # Path to output directory
                                                      verbose=self.verbose,  # Verbose output level
@@ -2350,21 +2391,20 @@ class Extractor:
                                                      )
 
         missing_experiment_ids, done_experiments, failed_extraction = Missing_detector.execute()
-        
-        #if "diagnostics_Versions_PyRadiomics" in done_experiments.columns:
-            #failed_samples = len(done_experiments[done_experiments["diagnostics_Versions_PyRadiomics"].isnull()])
-            #if failed_samples > 0:
-                #self.error.warning("Found {} samples with failed extraction! Try to redo extraction!".format(str(failed_samples)))
-                #print("Found {} samples with failed extraction! Try to redo extraction!".format(str(failed_samples)))
-                #failed_extraction = done_experiments[done_experiments["diagnostics_Versions_PyRadiomics"].isnull()]
-                #done_experiments = done_experiments[~done_experiments["diagnostics_Versions_PyRadiomics"].isnull()]
-                
-                #remove extraction files from tmp folder
-        #else:
-            #print("Warning: PyRadiomics extraction Failed! Could not find basic features!")
-            #self.error.warning("PyRadiomics extraction Failed! Could not find basic features!")
-            
-                  
+
+        # if "diagnostics_Versions_PyRadiomics" in done_experiments.columns:
+        # failed_samples = len(done_experiments[done_experiments["diagnostics_Versions_PyRadiomics"].isnull()])
+        # if failed_samples > 0:
+        # self.error.warning("Found {} samples with failed extraction! Try to redo extraction!".format(str(failed_samples)))
+        # print("Found {} samples with failed extraction! Try to redo extraction!".format(str(failed_samples)))
+        # failed_extraction = done_experiments[done_experiments["diagnostics_Versions_PyRadiomics"].isnull()]
+        # done_experiments = done_experiments[~done_experiments["diagnostics_Versions_PyRadiomics"].isnull()]
+
+        # remove extraction files from tmp folder
+        # else:
+        # print("Warning: PyRadiomics extraction Failed! Could not find basic features!")
+        # self.error.warning("PyRadiomics extraction Failed! Could not find basic features!")
+
         print("Found {} done experiments.".format(str(len(done_experiments))))
 
         # print(done_experiments.index.tolist())
@@ -2391,16 +2431,18 @@ class Extractor:
         # TODO: the ids got replaced to Unnamed: 0
         if "Unnamed: 0" in done_experiments.columns:
             done_experiments.set_index("Unnamed: 0", inplace=True)
-            
+
             if len(failed_extraction) > 0:
                 failed_extraction.set_index("Unnamed: 0", inplace=True)
 
         # remove done experiments from missing experiments
-        missing_experiment_ids = [missing_exp for missing_exp in missing_experiment_ids if missing_exp not in done_experiments.index.tolist()]
-        
+        missing_experiment_ids = [missing_exp for missing_exp in missing_experiment_ids if
+                                  missing_exp not in done_experiments.index.tolist()]
+
         if len(failed_extraction) > 0:
-            for failed_exp in tqdm(failed_extraction.index.tolist(), desc="Setting up failed PyRadiommics experiments", unit="sample"):
-                 if failed_exp not in missing_experiment_ids:
+            for failed_exp in tqdm(failed_extraction.index.tolist(), desc="Setting up failed PyRadiommics experiments",
+                                   unit="sample"):
+                if failed_exp not in missing_experiment_ids:
                     missing_experiment_ids.append(failed_exp)
 
         # check if outfile exists and containes processed files
@@ -2409,7 +2451,7 @@ class Extractor:
         # open(self.outfile, 'a').close()  # create empty file
         # # open(self.out_path + "logs/pyradiomics_feature_calculation_run.log", 'a').close()  # create empty file
         missing_df = pd.DataFrame()
-        
+
         print("Starting PyRadiomics feature extraction ...")
         if len(missing_experiment_ids) > 0:
             print("Need to extract features for", len(missing_experiment_ids), "samples.")
@@ -2443,9 +2485,9 @@ class Extractor:
                 # missing_df.to_csv("missing_df.csv")
                 # drop config column
                 self.df.drop(columns=["config"], inplace=True)
-            
+
             if len(failed_extraction) > 0:
-                if "Image" in  failed_extraction.columns:
+                if "Image" in failed_extraction.columns:
                     # if config is not there generate it
                     image = failed_extraction["Image"].apply(lambda x: os.path.basename(x)[:-len(".nii.gz")])
                     mask = failed_extraction["Mask"].apply(lambda x: os.path.basename(x)[:-len(".nii.gz")])
@@ -2455,12 +2497,12 @@ class Extractor:
                         id.append(x + "_" + y)
 
                     failed_extraction["config"] = id
-                    
+
                     print("Add failed extractions to list of experiments for extraction.")
-                    
+
                     # add failed extraction to missing samples
-                    missing_df = pd.concat([missing_df,failed_extraction])
-            
+                    missing_df = pd.concat([missing_df, failed_extraction])
+
             # missing_path = self.out_path + self.extractor + "_complete_processing_" + self.RunID + ".csv"
             # missing_df.to_csv(missing_path, index=False)
 
@@ -2511,7 +2553,8 @@ class Extractor:
 
             if len(done_experiments) != len(glob.glob(self.subject_dir + "/*.csv")):
                 # put result of missing samples together with results of already processed samples in tmp folder
-                complete_result, failed = Missing_detector.concat_extraction(csv_files=glob.glob(self.subject_dir + "/*.csv"))
+                complete_result, failed = Missing_detector.concat_extraction(
+                    csv_files=glob.glob(self.subject_dir + "/*.csv"))
                 # complete_result = self.concat_extraction(csv_files=glob.glob(self.subject_dir + "/*.csv"),
                 #                                         ignore_index=False)
             else:
@@ -2652,7 +2695,8 @@ class Extractor:
             elif (os.path.getsize(self.outfile) == 0) and (len(glob.glob(self.subject_dir + "/*.csv")) > 0):
                 print("Out file empty. Collecting Results from experiment files...")
                 self.logger.info("Collecting Results from tmp! PyRadiomics feature extraction already done ...")
-                complete_result, failed = Missing_detector.concat_extraction(csv_files=glob.glob(self.subject_dir + "/*.csv"))
+                complete_result, failed = Missing_detector.concat_extraction(
+                    csv_files=glob.glob(self.subject_dir + "/*.csv"))
                 # complete_result = self.concat_extraction(csv_files=glob.glob(self.subject_dir + "/*.csv"),
                 #                                         ignore_index=False)
                 complete_result.to_csv(self.outfile)
@@ -2780,7 +2824,7 @@ class Extractor:
 
         # save response for later
         df12 = pd.concat([df1, df2])  # , join='outer')
-        df3 = df12[~df12.index.duplicated(keep='first')] # TODO: check if this is correct
+        df3 = df12[~df12.index.duplicated(keep='first')]  # TODO: check if this is correct
 
         # only include values with int or float
         df1 = df1.select_dtypes(include=['float', 'int'])
@@ -2824,7 +2868,8 @@ class Extractor:
         return df
 
     @staticmethod
-    def calc_differences(df, t1, t2, logger, delta_radiomics:pd.DataFrame, numeric_cols, _id, take_label_changes, string_cols):
+    def calc_differences(df, t1, t2, logger, delta_radiomics: pd.DataFrame, numeric_cols, _id, take_label_changes,
+                         string_cols):
         """
         Calculate the differences between the timepoints.
 
@@ -2846,15 +2891,35 @@ class Extractor:
 
         # check for image transformation
         if df_t1["Image_Transformation"].to_list() != df_t2["Image_Transformation"].to_list():
-            logger.error("Image transformations differ between timepoints {} and {} for sample {}: {} {}".format(t1, t2, _id, df_t1["Image_Transformation"].to_list(), df_t2["Image_Transformation"].to_list()))
-            raise ValueError("Image transformations differ between timepoints {} and {} for sample {}: {} {}".format(t1, t2, _id, df_t1["Image_Transformation"].to_list(), df_t2["Image_Transformation"].to_list()))
+            logger.error(
+                "Image transformations differ between timepoints {} and {} for sample {}: {} {}".format(t1, t2, _id,
+                                                                                                        df_t1[
+                                                                                                            "Image_Transformation"].to_list(),
+                                                                                                        df_t2[
+                                                                                                            "Image_Transformation"].to_list()))
+            raise ValueError(
+                "Image transformations differ between timepoints {} and {} for sample {}: {} {}".format(t1, t2, _id,
+                                                                                                        df_t1[
+                                                                                                            "Image_Transformation"].to_list(),
+                                                                                                        df_t2[
+                                                                                                            "Image_Transformation"].to_list()))
         else:
             img_trans = df_t1["Image_Transformation"].values[0]
 
         # check for mask transformation
         if df_t1["Mask_Transformation"].to_list() != df_t2["Mask_Transformation"].to_list():
-            logger.error("Mask transformations differ between timepoints {} and {} for sample {}!".format(t1, t2, _id, _id, df_t1["Mask_Transformation"].to_list(), df_t2["Mask_Transformation"].to_list()))
-            raise ValueError("Mask transformations differ between timepoints {} and {} for sample {}!".format(t1, t2, _id, _id, df_t1["Mask_Transformation"].to_list(), df_t2["Mask_Transformation"].to_list()))
+            logger.error(
+                "Mask transformations differ between timepoints {} and {} for sample {}!".format(t1, t2, _id, _id,
+                                                                                                 df_t1[
+                                                                                                     "Mask_Transformation"].to_list(),
+                                                                                                 df_t2[
+                                                                                                     "Mask_Transformation"].to_list()))
+            raise ValueError(
+                "Mask transformations differ between timepoints {} and {} for sample {}!".format(t1, t2, _id, _id,
+                                                                                                 df_t1[
+                                                                                                     "Mask_Transformation"].to_list(),
+                                                                                                 df_t2[
+                                                                                                     "Mask_Transformation"].to_list()))
         else:
             mask_trans = df_t1["Mask_Transformation"].values[0]
 
@@ -2879,16 +2944,15 @@ class Extractor:
                 else:
                     logger.error("Timepoint {} has more than one extraction for sample {}!".format(t2, _id))
                 raise ValueError("Timepoints {} and {} for sample {} have failed extractions!".format(t1, t2, _id))
-            
 
         # Compute delta using only numeric feature columns
         delta_features = df_t2[numeric_cols].values - df_t1[numeric_cols].values
         delta = pd.DataFrame(delta_features, columns=numeric_cols)
 
         # Assign metadata information
-        #delta.insert(loc=0, column='ID', value=f"{_id}-delta-{t1}-{t2}")
-        #delta.insert(loc=1, column='Image_Transformation', value=img_trans if pd.notna(img_trans) else np.nan)
-        #delta.insert(loc=2, column='Mask_Transformation', value=mask_trans if pd.notna(mask_trans) else np.nan)
+        # delta.insert(loc=0, column='ID', value=f"{_id}-delta-{t1}-{t2}")
+        # delta.insert(loc=1, column='Image_Transformation', value=img_trans if pd.notna(img_trans) else np.nan)
+        # delta.insert(loc=2, column='Mask_Transformation', value=mask_trans if pd.notna(mask_trans) else np.nan)
 
         delta["ID"] = f"{_id}-delta-{t1}-{t2}"  # New ID format 
         delta["Image_Transformation"] = img_trans if pd.notna(img_trans) else np.nan
@@ -2896,21 +2960,23 @@ class Extractor:
 
         if not df_t1_label.isna().all() and not df_t2_label.isna().all():
             if take_label_changes:
-                if df_t1_label.values[0] == df_t2_label.values[0]: # if labels at timepoints are equal
+                if df_t1_label.values[0] == df_t2_label.values[0]:  # if labels at timepoints are equal
                     delta["Prediction_Label"] = df_t1_label.values[0]
-                elif (df_t1_label.values[0] == 1) and (df_t2_label.values[0] == 0): # if label at timepoint 1 is 1 and timepoint 2 is 0 --> 2
+                elif (df_t1_label.values[0] == 1) and (
+                    df_t2_label.values[0] == 0):  # if label at timepoint 1 is 1 and timepoint 2 is 0 --> 2
                     delta["Prediction_Label"] = 2
-                else: # if label at timepoint 1 is 0 and timepoint 2 is 1 --> -1
+                else:  # if label at timepoint 1 is 0 and timepoint 2 is 1 --> -1
                     delta["Prediction_Label"] = df_t1_label.values[0] - df_t2_label.values[0]
             else:
-                if df_t1_label.values[0] == df_t2_label.values[0]: # if labels at timepoints are equal
+                if df_t1_label.values[0] == df_t2_label.values[0]:  # if labels at timepoints are equal
                     delta["Prediction_Label"] = df_t1_label.values[0]
-                else: # if labels at timepoints defer take the label from the latest timepoint
+                else:  # if labels at timepoints defer take the label from the latest timepoint
                     delta["Prediction_Label"] = df_t2_label.values[0]
-            
+
         else:
             logger.warning("Could not find Prediction_Label for sample {} at timepoints {} and {}!".format(_id, t1, t2))
-            raise ValueError("Could not find Prediction_Label for sample {} at timepoints {} and {}!".format(_id, t1, t2))
+            raise ValueError(
+                "Could not find Prediction_Label for sample {} at timepoints {} and {}!".format(_id, t1, t2))
             # delta["Prediction_Label"] = np.nan
 
         # Merge string columns correctly
@@ -2933,14 +2999,16 @@ class Extractor:
                     del_str.append(f"{str_t1} - {str_t2}")
                 delta[col] = del_str
             else:
-                logger.warning("Unequal size for feature {} for sample {} at timepoints {} and {}!".format(col,_id, t1, t2))
-                raise ValueError("Unequal size for feature {} for sample {} at timepoints {} and {}!".format(col,_id, t1, t2))
+                logger.warning(
+                    "Unequal size for feature {} for sample {} at timepoints {} and {}!".format(col, _id, t1, t2))
+                raise ValueError(
+                    "Unequal size for feature {} for sample {} at timepoints {} and {}!".format(col, _id, t1, t2))
 
         # keep the format where stirng columns are on the fisr positions
-        #other_cols = [col for col in delta.columns if col not in string_cols]
+        # other_cols = [col for col in delta.columns if col not in string_cols]
 
         # Reorder the DataFrame
-        #delta = delta[string_cols + other_cols]
+        # delta = delta[string_cols + other_cols]
 
         # Append to the result
         delta_radiomics = pd.concat([delta, delta_radiomics], ignore_index=True)
@@ -2979,7 +3047,7 @@ class Extractor:
             features["Mask_Transformation"] = np.nan
 
         # Sort by ID, Timepoint, and transformations (if available)
-        features = features.sort_values(["ID", "Timepoint", "Image_Transformation", "Mask_Transformation"], 
+        features = features.sort_values(["ID", "Timepoint", "Image_Transformation", "Mask_Transformation"],
                                         ascending=[True, True, True, True])
 
         # Identify column types dynamically
@@ -3005,104 +3073,127 @@ class Extractor:
                 t1, t2 = timepoints[i], timepoints[i + 1]  # Previous and following timepoints
 
                 # 1. get raw samples without Mask Transformation and Image Trabsformation
-                raw_samples = sample_df.copy().loc[(sample_df["Image_Transformation"].isna()) & (sample_df["Mask_Transformation"].isna())]
-                
+                raw_samples = sample_df.copy().loc[
+                    (sample_df["Image_Transformation"].isna()) & (sample_df["Mask_Transformation"].isna())]
+
                 # replacing different values which were marked as nan
                 raw_samples["Image_Transformation"] = np.nan
                 raw_samples["Mask_Transformation"] = np.nan
-                raw_samples['Image_Transformation']=raw_samples['Image_Transformation'].fillna("")
-                raw_samples['Mask_Transformation']=raw_samples['Mask_Transformation'].fillna("")
+                raw_samples['Image_Transformation'] = raw_samples['Image_Transformation'].fillna("")
+                raw_samples['Mask_Transformation'] = raw_samples['Mask_Transformation'].fillna("")
 
-                delta_radiomics = Extractor.calc_differences(df = raw_samples, 
-                                                            t1 = t1, 
-                                                            t2 = t2, 
-                                                            logger = logger, 
-                                                            delta_radiomics = delta_radiomics, 
-                                                            numeric_cols = numeric_cols,
-                                                            _id=_id,
-                                                            take_label_changes=take_label_changes,
-                                                            string_cols=string_cols)
-                
+                delta_radiomics = Extractor.calc_differences(df=raw_samples,
+                                                             t1=t1,
+                                                             t2=t2,
+                                                             logger=logger,
+                                                             delta_radiomics=delta_radiomics,
+                                                             numeric_cols=numeric_cols,
+                                                             _id=_id,
+                                                             take_label_changes=take_label_changes,
+                                                             string_cols=string_cols)
+
                 # 2. get samples with only Mask Transformation
-                raw_mask_trans_samples = sample_df.copy().loc[(sample_df["Image_Transformation"].isna()) & (~sample_df["Mask_Transformation"].isna())]
+                raw_mask_trans_samples = sample_df.copy().loc[
+                    (sample_df["Image_Transformation"].isna()) & (~sample_df["Mask_Transformation"].isna())]
                 for msk_trans in raw_mask_trans_samples["Mask_Transformation"].unique():
-                    raw_mask_trans_samples_single_trans = raw_mask_trans_samples.loc[raw_mask_trans_samples["Mask_Transformation"]==msk_trans]
-                    
+                    raw_mask_trans_samples_single_trans = raw_mask_trans_samples.loc[
+                        raw_mask_trans_samples["Mask_Transformation"] == msk_trans]
+
                     # replacing different values which were marked as nan
                     raw_mask_trans_samples_single_trans["Image_Transformation"] = np.nan
-                    raw_mask_trans_samples_single_trans['Image_Transformation']=raw_mask_trans_samples_single_trans['Image_Transformation'].fillna("")
+                    raw_mask_trans_samples_single_trans['Image_Transformation'] = raw_mask_trans_samples_single_trans[
+                        'Image_Transformation'].fillna("")
 
                     # checking for mask transformations and image transformations present in both timepoints
-                    df_t1 = raw_mask_trans_samples_single_trans[(raw_mask_trans_samples_single_trans["Timepoint"] == float(t1))]
-                    df_t2 = raw_mask_trans_samples_single_trans[(raw_mask_trans_samples_single_trans["Timepoint"] == float(t2))]
+                    df_t1 = raw_mask_trans_samples_single_trans[
+                        (raw_mask_trans_samples_single_trans["Timepoint"] == float(t1))]
+                    df_t2 = raw_mask_trans_samples_single_trans[
+                        (raw_mask_trans_samples_single_trans["Timepoint"] == float(t2))]
 
-                    if (msk_trans in df_t1["Mask_Transformation"].to_list()) and (msk_trans in df_t2["Mask_Transformation"].to_list()):
-                        delta_radiomics = Extractor.calc_differences(df = raw_mask_trans_samples_single_trans, 
-                                                                    t1 = t1, 
-                                                                    t2 = t2, 
-                                                                    logger = logger, 
-                                                                    delta_radiomics = delta_radiomics, 
-                                                                    numeric_cols = numeric_cols,
-                                                                    _id=_id,
-                                                                    take_label_changes=take_label_changes,
-                                                                    string_cols=string_cols)
+                    if (msk_trans in df_t1["Mask_Transformation"].to_list()) and (
+                        msk_trans in df_t2["Mask_Transformation"].to_list()):
+                        delta_radiomics = Extractor.calc_differences(df=raw_mask_trans_samples_single_trans,
+                                                                     t1=t1,
+                                                                     t2=t2,
+                                                                     logger=logger,
+                                                                     delta_radiomics=delta_radiomics,
+                                                                     numeric_cols=numeric_cols,
+                                                                     _id=_id,
+                                                                     take_label_changes=take_label_changes,
+                                                                     string_cols=string_cols)
                     else:
-                        logger.warning(f"Could not find Mask Transformation {msk_trans} in both timepoints {t1} and {t2} for sample {_id}!")
+                        logger.warning(
+                            f"Could not find Mask Transformation {msk_trans} in both timepoints {t1} and {t2} for sample {_id}!")
                         # print(f"Could not find Mask Transformation {msk_trans} in both timepoints {t1} and {t2} for sample {_id}!")
 
                 # 3. get samples with only Image Transformation
-                raw_img_trans_samples = sample_df.copy().loc[(~sample_df["Image_Transformation"].isna()) & (sample_df["Mask_Transformation"].isna())]
+                raw_img_trans_samples = sample_df.copy().loc[
+                    (~sample_df["Image_Transformation"].isna()) & (sample_df["Mask_Transformation"].isna())]
                 for img_trans in raw_img_trans_samples["Image_Transformation"].unique():
-                    raw_img_trans_samples_single_trans = raw_img_trans_samples.loc[raw_img_trans_samples["Image_Transformation"]==img_trans]
-                    
+                    raw_img_trans_samples_single_trans = raw_img_trans_samples.loc[
+                        raw_img_trans_samples["Image_Transformation"] == img_trans]
+
                     # replacing different values which were marked as nan
                     raw_img_trans_samples_single_trans["Mask_Transformation"] = np.nan
-                    raw_img_trans_samples_single_trans['Mask_Transformation']=raw_img_trans_samples_single_trans['Mask_Transformation'].fillna("")
+                    raw_img_trans_samples_single_trans['Mask_Transformation'] = raw_img_trans_samples_single_trans[
+                        'Mask_Transformation'].fillna("")
 
                     # checking for mask transformations and image transformations present in both timepoints
-                    df_t1 = raw_img_trans_samples_single_trans[(raw_img_trans_samples_single_trans["Timepoint"] == float(t1))]
-                    df_t2 = raw_img_trans_samples_single_trans[(raw_img_trans_samples_single_trans["Timepoint"] == float(t2))]
+                    df_t1 = raw_img_trans_samples_single_trans[
+                        (raw_img_trans_samples_single_trans["Timepoint"] == float(t1))]
+                    df_t2 = raw_img_trans_samples_single_trans[
+                        (raw_img_trans_samples_single_trans["Timepoint"] == float(t2))]
 
-                    if (img_trans in df_t1["Image_Transformation"].to_list()) and (img_trans in df_t2["Image_Transformation"].to_list()):
+                    if (img_trans in df_t1["Image_Transformation"].to_list()) and (
+                        img_trans in df_t2["Image_Transformation"].to_list()):
 
-                        delta_radiomics = Extractor.calc_differences(df = raw_img_trans_samples_single_trans, 
-                                                                    t1 = t1, 
-                                                                    t2 = t2, 
-                                                                    logger = logger, 
-                                                                    delta_radiomics = delta_radiomics, 
-                                                                    numeric_cols = numeric_cols,
-                                                                    _id=_id,
-                                                                    take_label_changes=take_label_changes,
-                                                                    string_cols=string_cols)
+                        delta_radiomics = Extractor.calc_differences(df=raw_img_trans_samples_single_trans,
+                                                                     t1=t1,
+                                                                     t2=t2,
+                                                                     logger=logger,
+                                                                     delta_radiomics=delta_radiomics,
+                                                                     numeric_cols=numeric_cols,
+                                                                     _id=_id,
+                                                                     take_label_changes=take_label_changes,
+                                                                     string_cols=string_cols)
                     else:
-                        logger.warning(f"Could not find Image Transformation {img_trans} in both timepoints {t1} and {t2} for sample {_id}!")
-                        raise ValueError(f"Failed Image Transformation {img_trans} not in both timepoints {t1} and {t2} for sample {_id}!")
+                        logger.warning(
+                            f"Could not find Image Transformation {img_trans} in both timepoints {t1} and {t2} for sample {_id}!")
+                        raise ValueError(
+                            f"Failed Image Transformation {img_trans} not in both timepoints {t1} and {t2} for sample {_id}!")
 
                 # 4. get samples with both Mask and Image Transformation
-                msk_img_trans_samples = sample_df.copy().loc[(~sample_df["Image_Transformation"].isna()) & (~sample_df["Mask_Transformation"].isna())]
+                msk_img_trans_samples = sample_df.copy().loc[
+                    (~sample_df["Image_Transformation"].isna()) & (~sample_df["Mask_Transformation"].isna())]
                 for img_trans in msk_img_trans_samples["Image_Transformation"].unique():
-                    for msk_trans in msk_img_trans_samples.loc[msk_img_trans_samples["Image_Transformation"]==img_trans,"Mask_Transformation"].unique():
-                        raw_img_msk_trans_samples_single_trans = msk_img_trans_samples.loc[(msk_img_trans_samples["Image_Transformation"]==img_trans) & (msk_img_trans_samples["Mask_Transformation"] == msk_trans)]
+                    for msk_trans in msk_img_trans_samples.loc[
+                        msk_img_trans_samples["Image_Transformation"] == img_trans, "Mask_Transformation"].unique():
+                        raw_img_msk_trans_samples_single_trans = msk_img_trans_samples.loc[
+                            (msk_img_trans_samples["Image_Transformation"] == img_trans) & (
+                                    msk_img_trans_samples["Mask_Transformation"] == msk_trans)]
 
                         # checking for mask transformations and image transformations present in both timepoints
-                        df_t1 = raw_img_msk_trans_samples_single_trans[(raw_img_msk_trans_samples_single_trans["Timepoint"] == float(t1))]
-                        df_t2 = raw_img_msk_trans_samples_single_trans[(raw_img_msk_trans_samples_single_trans["Timepoint"] == float(t2))]
+                        df_t1 = raw_img_msk_trans_samples_single_trans[
+                            (raw_img_msk_trans_samples_single_trans["Timepoint"] == float(t1))]
+                        df_t2 = raw_img_msk_trans_samples_single_trans[
+                            (raw_img_msk_trans_samples_single_trans["Timepoint"] == float(t2))]
 
-                        if (img_trans in df_t1["Image_Transformation"].to_list()) and (img_trans in df_t2["Image_Transformation"].to_list()):
-                            if (msk_trans in df_t1["Mask_Transformation"].to_list()) and (msk_trans in df_t2["Mask_Transformation"].to_list()):
-
-                                delta_radiomics = Extractor.calc_differences(df = raw_img_msk_trans_samples_single_trans, 
-                                                                            t1 = t1, 
-                                                                            t2 = t2, 
-                                                                            logger = logger, 
-                                                                            delta_radiomics = delta_radiomics, 
-                                                                            numeric_cols = numeric_cols,
-                                                                            _id=_id,
-                                                                            take_label_changes=take_label_changes,
-                                                                            string_cols=string_cols)
+                        if (img_trans in df_t1["Image_Transformation"].to_list()) and (
+                            img_trans in df_t2["Image_Transformation"].to_list()):
+                            if (msk_trans in df_t1["Mask_Transformation"].to_list()) and (
+                                msk_trans in df_t2["Mask_Transformation"].to_list()):
+                                delta_radiomics = Extractor.calc_differences(df=raw_img_msk_trans_samples_single_trans,
+                                                                             t1=t1,
+                                                                             t2=t2,
+                                                                             logger=logger,
+                                                                             delta_radiomics=delta_radiomics,
+                                                                             numeric_cols=numeric_cols,
+                                                                             _id=_id,
+                                                                             take_label_changes=take_label_changes,
+                                                                             string_cols=string_cols)
 
                 # Get all unique image & mask transformations for these timepoints
-                #for (img_trans, mask_trans) in sample_df.groupby(["Image_Transformation", "Mask_Transformation"]).groups.keys():
+                # for (img_trans, mask_trans) in sample_df.groupby(["Image_Transformation", "Mask_Transformation"]).groups.keys():
                 #    if pd.isna(mask_trans):
                 #        if pd.isna(img_trans):
                 #            df_t1 = sample_df[(sample_df["Timepoint"] == float(t1))]
@@ -3128,7 +3219,8 @@ class Extractor:
         return delta_radiomics
 
     @staticmethod
-    def get_delta_radiomics(features, extractor="", time_format="%Y-%m-%d", out_path="", logger=None, error=None, take_label_changes=False):
+    def get_delta_radiomics(features, extractor="", time_format="%Y-%m-%d", out_path="", logger=None, error=None,
+                            take_label_changes=False):
         """
         Compute the delta radiomics features of all time points.
         :param features: The radiomics features DataFrame.
@@ -3156,7 +3248,7 @@ class Extractor:
             except:
                 error.warning("Timepoint column is not numeric!")
                 print("Timepoint column is not numeric!")
-            
+
             features = Extractor.remove_timepoint_from_ID(df=features.copy())
 
             # check if Timepoint column has only one digit - sort by date
@@ -3173,14 +3265,15 @@ class Extractor:
         features = features.sort_values(['ID', 'Timepoint'], ascending=[True, True])
 
         # calculate delta radiomics
-        delta_radiomics = Extractor.compute_delta_radiomics(features=features, logger=logger, take_label_changes=take_label_changes)
-        
-        #if extractor != "":
-            # Save delta radiomics
-            # delta_radiomics.to_csv(out_path + "extracted_features/" + extractor + "_delta_radiomics.csv")
-        #else:
-            # Save delta radiomics
-            # delta_radiomics.to_csv(out_path + "delta_radiomics.csv")
+        delta_radiomics = Extractor.compute_delta_radiomics(features=features, logger=logger,
+                                                            take_label_changes=take_label_changes)
+
+        # if extractor != "":
+        # Save delta radiomics
+        # delta_radiomics.to_csv(out_path + "extracted_features/" + extractor + "_delta_radiomics.csv")
+        # else:
+        # Save delta radiomics
+        # delta_radiomics.to_csv(out_path + "delta_radiomics.csv")
 
         logger.info("Delta radiomics features computed and saved")
 
@@ -3333,9 +3426,9 @@ class Extractor:
                 for result in tqdm(pool.imap(self.crop_exe, Row_list),
                                    total=len(self.df), desc="Cropping ROI", unit="masks"):
                     self.df.loc[(result["Raw_Image"] == self.df["Raw_Image"]) & (
-                            result["Raw_Mask"] == self.df["Raw_Mask"]), "Image"] = result["Image"]
+                        result["Raw_Mask"] == self.df["Raw_Mask"]), "Image"] = result["Image"]
                     self.df.loc[(result["Raw_Image"] == self.df["Raw_Image"]) & (
-                            result["Raw_Mask"] == self.df["Raw_Mask"]), "Mask"] = result["Mask"]
+                        result["Raw_Mask"] == self.df["Raw_Mask"]), "Mask"] = result["Mask"]
 
             # with tqdm(total=len(self.df), desc="Cropping ROI") as pbar:
             #     with concurrent.futures.ProcessPoolExecutor(max_workers=self.n_cpu) as executor:
@@ -3370,14 +3463,14 @@ class Extractor:
         """
 
         # affected features from configuration: 'cm', 'dzm', 'ih', 'ngl', 'ngt', 'rlm', 'szm'
-        
-        configuration_cols = ["ID", "Image", "Mask", "Modality", "Image_Transformation","Mask_Transformation","Rater", "Prediction_Label", "ROI_Label"]
+
+        configuration_cols = ["ID", "Image", "Mask", "Modality", "Image_Transformation", "Mask_Transformation", "Rater",
+                              "Prediction_Label", "ROI_Label"]
         configed_cols = []
-        
-        
+
         if "id_subject" in features.columns:
             features.index = features["id_subject"]
-        
+
         # check if all configs are in data
         configuration_cols_in_data = []
         for config in configuration_cols:
@@ -3386,91 +3479,90 @@ class Extractor:
                 print("Configuration {} is missing in extracted features!".format(str(config)))
             else:
                 configuration_cols_in_data.append(config)
-                
+
         config_data = features[configuration_cols_in_data]
-        
+
         # Configuration specific Parameter
-        config_specific_param = ['ngl_dc_perc_d1_a0.0_2d_fb',]
+        config_specific_param = ['ngl_dc_perc_d1_a0.0_2d_fb', ]
 
         # Get all features with nan
         nan_features = features.columns[features.isna().any()].tolist()
 
-        if len(nan_features)>0:
-            
+        if len(nan_features) > 0:
+
             # these columns are not considered as they contain nan by nature
             columns_with_nan = ["Rater", "Image_Transformation", "Mask_Transformation", "Timepoint", "ROI_Label"]
             nan_feature_ = []
             configs = []
-            
+
             # get configs of these features
             for feat in nan_features:
                 if feat not in columns_with_nan:
                     nan_feature_.append(feat)
-                    
+
                     # no configuration of morphological features
                     if "morph" not in feat:
                         configs.append(feat.split("_")[-1])
-                        
+
             # Remove feature configuration from feature name and put it into new column called "MIRP_config"
             checked_configs = []
             features_without_config_in_col = pd.DataFrame()
-            
+
             # If we have different feature configurations
             if len(configs) > 0:
-                
+
                 configs = list(set(configs))
                 print("Found {} different feature configurations: {}".format(str(len(configs)), str(configs)))
 
                 nan_feature_ = list(set(nan_feature_))
                 # print("Found {} different features with NaN: {}".format(str(len(nan_feature_)), str(nan_feature_)))
-                
+
                 for config in tqdm(configs, desc="Configure optimized features", unit="features"):
-                    
+
                     if config not in checked_configs:
                         config_features = []
-                        
+
                         # get all features with config in the ending
                         for feat in nan_feature_:
                             if feat.endswith(config):
                                 config_features.append(feat)
-                        
+
                         # get features with same configuration
                         feat_df = features[config_features]
-                        
+
                         # drop all samples which do not have this configuration
-                        feat_df = feat_df.dropna(axis = 0, how = 'all')
-                        
+                        feat_df = feat_df.dropna(axis=0, how='all')
+
                         feat_df["MIRP_config"] = config
                         checked_configs.append(config)
 
-                        
-                        feat_df_=feat_df.copy()
-                        
+                        feat_df_ = feat_df.copy()
+
                         for col in feat_df.columns:
                             if col.endswith(config):
                                 # remove total configuration from the end of the feature name
                                 if "_fb" in col:
-                                    ext_config = re.search("_fb([_0-9a-zA-z.]*)",col)[1]
+                                    ext_config = re.search("_fb([_0-9a-zA-z.]*)", col)[1]
                                     new_col = col.removesuffix(ext_config)
-                                    
+
                                 else:
                                     new_col = col.removesuffix("_" + str(config))
-                                    
-                                feat_df_ = feat_df_.rename(columns={col:new_col})
+
+                                feat_df_ = feat_df_.rename(columns={col: new_col})
                                 configed_cols.append(col)
-                        
+
                         feat_df = feat_df_.copy()
                         del feat_df_
-                        
+
                         self.feat_df = feat_df.copy()
-                        
+
                         if len(features_without_config_in_col) == 0:
                             features_without_config_in_col = feat_df
                         else:
                             features_without_config_in_col = pd.concat([features_without_config_in_col, feat_df])
 
                 print("Configured {} Features".format(len(configed_cols)))
-                
+
                 # check if config specific parameter are in feature space
                 conf_feat_ = []
                 for conf_feat in config_specific_param:
@@ -3480,13 +3572,13 @@ class Extractor:
 
                 config_specific_param = conf_feat_
                 del conf_feat_
-                
+
                 if features_without_config_in_col[config_specific_param].isnull().values.any():
                     self.logger.info("Need to drop config specific features")
                     print("Need to drop config specific features")
 
                     for nan_feat in config_specific_param:
-                        for col in  features_without_config_in_col.columns:
+                        for col in features_without_config_in_col.columns:
                             if nan_feat in col:
                                 if features_without_config_in_col[col].isnull().any():
                                     print("Need to drop feature " + str(col))
@@ -3494,36 +3586,38 @@ class Extractor:
                                     features_without_config_in_col.drop(col, axis=1, inplace=True)
 
                 self.features_without_config_in_col = features_without_config_in_col
-                nan_features = features_without_config_in_col.columns[features_without_config_in_col.isna().any()].tolist()
+                nan_features = features_without_config_in_col.columns[
+                    features_without_config_in_col.isna().any()].tolist()
                 if len(nan_features) > 0:
                     # check if configuration has been tracked correctly
-                    
+
                     for nan_feature in nan_features:
                         if nan_feature not in columns_with_nan:
                             self.error.warning("Feature contains NaN! " + str(nan_feature))
                             print("Warning! Feature contains NaN! " + str(nan_feature))
-                            #features_without_config_in_col.drop(nan_feature, axis=1, inplace=True)
+                            # features_without_config_in_col.drop(nan_feature, axis=1, inplace=True)
 
                 # check if sample size of before is the same
                 if features_without_config_in_col.shape[0] != features.shape[0]:
-                    self.error.warning("Feature configuration Failed! Something is wrong with the Feature configuration. Please check Extraction file.")
-                    print("Feature configuration Failed! Something is wrong with the Feature configuration. Please check Extraction file.")
+                    self.error.warning(
+                        "Feature configuration Failed! Something is wrong with the Feature configuration. Please check Extraction file.")
+                    print(
+                        "Feature configuration Failed! Something is wrong with the Feature configuration. Please check Extraction file.")
                     features_without_config_in_col = features
 
-                    #features_without_config_in_col = pd.concat([features_without_config_in_col, features])
+                    # features_without_config_in_col = pd.concat([features_without_config_in_col, features])
             else:
                 features_without_config_in_col = features
-            
+
             # add dataset configuration
-            features_without_config_in_col = pd.concat([config_data, features_without_config_in_col], axis=1) 
-            
+            features_without_config_in_col = pd.concat([config_data, features_without_config_in_col], axis=1)
+
             # check if features are not included in out features
-            
+
             # features_without_config_in_col = pd.concat([config_data, features], axis=1) 
         else:
-           features_without_config_in_col = features
-           
-           
+            features_without_config_in_col = features
+
         # if feature from before not in configed_cols, not in columns_with_nan and not in features_without_config_in_col --> missing feature
         missing_features = []
         for feature in features.columns:
@@ -3531,15 +3625,15 @@ class Extractor:
                 if feature not in columns_with_nan:
                     if feature not in features_without_config_in_col.columns:
                         missing_features.append(feature)
-                        
+
         print("Add {} non configurable features ...".format(str(len(missing_features))))
 
         features_without_config_in_col = pd.concat([features_without_config_in_col, features[missing_features]], axis=1)
-        
+
         if features_without_config_in_col.index.name == "id_subject":
             if "id_subject" in features_without_config_in_col.columns:
-                features_without_config_in_col.drop(['id_subject'], axis = 1, inplace = True) 
-        
+                features_without_config_in_col.drop(['id_subject'], axis=1, inplace=True)
+
         print("MIRP Extraction Configuration done")
         return features_without_config_in_col
 
@@ -3552,8 +3646,7 @@ class Extractor:
 
         # Get data configuration
         self.df = self.get_info_from_csv(path2csv=self.path2confCSV)
-        
-        
+
         # check if individual optimization of bin size is necessary
         # check if extreme values are included may cause Mem problems!
         if self.data_fingerprint['Number_of_bins'].max() > self.rptk_config["Feature_extraction_config"]["max_num_bin"]:
@@ -3578,7 +3671,7 @@ class Extractor:
             print("### Starting PyRadiomics extraction ###\n")
             features = self.exe_pyradiomics()
 
-        unnamed_cols = rptk.get_unnamed_cols(features)
+        unnamed_cols = get_unnamed_cols(features)
         if len(unnamed_cols) > 0:
             self.logger.info("Unnamed columns found: " + str(unnamed_cols))
             features = features.drop(columns=unnamed_cols)
@@ -3587,7 +3680,7 @@ class Extractor:
         failed = features[features.isnull()].copy()
         if failed.shape[0] > 0:
             self.error.warning("Failed extraction with NaN:" + str(len(failed)))
-            
+
             # print("Failed extraction with NaN:" + str(len(failed['Mask'])))
             features = features[~features.isnull()]
 
@@ -3600,28 +3693,27 @@ class Extractor:
             if features.index.name == self.df.index.name:
                 if features.index in self.df.index:
                     if "Image" in self.df.columns:
-                        features["Image"] = self.df.loc[features.index,"Image"]
+                        features["Image"] = self.df.loc[features.index, "Image"]
                     if "Mask" in self.df.columns:
-                        features["Mask"] = self.df.loc[features.index,"Mask"]
+                        features["Mask"] = self.df.loc[features.index, "Mask"]
                     if "Image_Transformation" in self.df.columns:
-                        features["Image_Transformation"] = self.df.loc[features.index,"Image_Transformation"]
+                        features["Image_Transformation"] = self.df.loc[features.index, "Image_Transformation"]
                     if "Mask_Transformation" in self.df.columns:
-                        features["Mask_Transformation"] = self.df.loc[features.index,"Mask_Transformation"]
+                        features["Mask_Transformation"] = self.df.loc[features.index, "Mask_Transformation"]
                     if "Rater" in self.df.columns:
-                        features["Rater"] = self.df.loc[features.index,"Rater"]
+                        features["Rater"] = self.df.loc[features.index, "Rater"]
                     if "Modality" in self.df.columns:
-                        features["Modality"] = self.df.loc[features.index,"Modality"]
+                        features["Modality"] = self.df.loc[features.index, "Modality"]
                     if "Prediction_Label" in self.df.columns:
-                        features["Prediction_Label"] = self.df.loc[features.index,"Prediction_Label"]
+                        features["Prediction_Label"] = self.df.loc[features.index, "Prediction_Label"]
                     if "ROI_Label" in self.df.columns:
-                        features["ROI_Label"] = self.df.loc[features.index,"ROI_Label"]
+                        features["ROI_Label"] = self.df.loc[features.index, "ROI_Label"]
                     if "ID" in self.df.columns:
-                        eatures["ID"] = self.df.loc[features.index,"ID"]
+                        eatures["ID"] = self.df.loc[features.index, "ID"]
                 else:
                     self.error.warning("Index from extraction is not included in preprocessing!")
             else:
                 self.error.warning(f"Index {features.index.name} is not in preprocessing file!")
-                    
 
         dropped = 0
         for i, row in features.iterrows():
@@ -3655,15 +3747,16 @@ class Extractor:
         if self.delta:
             print("Calculate Delta Radiomics ...")
             # save features wihtout delta calculation
-            features.to_csv(self.extracted_features_dir + "tmp/" + str(self.extractor) + "_raw_extraction_" + str(self.RunID) + ".csv")
+            features.to_csv(self.extracted_features_dir + "tmp/" + str(self.extractor) + "_raw_extraction_" + str(
+                self.RunID) + ".csv")
 
             self.features = features
-            features = Extractor.get_delta_radiomics(features = self.features, 
-                                                     extractor=self.extractor, 
-                                                     time_format=self.time_format, 
-                                                     out_path=self.out_path, 
-                                                     logger=self.logger, 
-                                                     error=self.error, 
+            features = Extractor.get_delta_radiomics(features=self.features,
+                                                     extractor=self.extractor,
+                                                     time_format=self.time_format,
+                                                     out_path=self.out_path,
+                                                     logger=self.logger,
+                                                     error=self.error,
                                                      take_label_changes=self.take_label_changes)
 
         # checking for duplicated samples
@@ -3684,7 +3777,7 @@ class Extractor:
 
         # overwrite results
         features.to_csv(self.outfile)
-        
+
         # check for IBSI coverage
         IBSIFeatureFormater(extractor=self.extractor,
                             features=features,
@@ -3692,17 +3785,20 @@ class Extractor:
                             logger=self.logger,
                             error=self.error,
                             output_path=self.out_path + "extracted_features/IBSI_profile/").format_features()
-                        
+
         if self.self_optimize:
             if self.extractor == "MIRP":
                 # features.to_csv(self.outfile[:-len(".csv")]+"_raw.csv")
-                features.to_csv(self.extracted_features_tmp_dir + str(self.extractor) + "_extraction_without_mirp_config" + str(self.RunID) + ".csv")
-                
-                print(3*"#","Config MIRP Extraction",3*"#")
+                features.to_csv(
+                    self.extracted_features_tmp_dir + str(self.extractor) + "_extraction_without_mirp_config" + str(
+                        self.RunID) + ".csv")
+
+                print(3 * "#", "Config MIRP Extraction", 3 * "#")
                 features = self.adapt_optimized_feature_configuration(features)
                 features.to_csv(self.outfile)
 
-        self.failed_extractions.to_csv(self.out_path + "extracted_features/" + self.extractor + "_failed_extraction.csv")
+        self.failed_extractions.to_csv(
+            self.out_path + "extracted_features/" + self.extractor + "_failed_extraction.csv")
 
         self.logger.info("### " + self.extractor + " Extraction Finished ###\n")
         print("### " + self.extractor + " Extraction Finished ###\n")

@@ -67,7 +67,7 @@ from sklearn.model_selection import learning_curve
 from sklearn.model_selection import ShuffleSplit
 import random
 
-from rptk.src.model_training.HyperparameterConfigurator import HyperparameterConfigurator
+from src.model_training.HyperparameterConfigurator import HyperparameterConfigurator
 
 #from rptk.src.CV_Generator import *
 #from rptk.src.Oversampler import *
